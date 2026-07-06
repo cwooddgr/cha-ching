@@ -4,6 +4,7 @@ const APP_NAMES = {
   "co.dgrlabs.cdwally": "CD Wally",
   "co.dgrlabs.countdowns": "Countdowns",
   "co.dgrlabs.heymuso": "HeyMuso",
+  "co.dgrlabs.overflight": "Overflight",
 };
 
 const REVENUE_EVENTS = new Set([
