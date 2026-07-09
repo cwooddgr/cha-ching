@@ -180,6 +180,12 @@ export default {
       }
 
       const notification = decodeJWSPayload(signedPayload);
+
+      if (notification.data?.environment === "Sandbox") {
+        console.log(`Skipping Sandbox notification: ${notification.notificationType}`);
+        return new Response("OK", { status: 200 });
+      }
+
       let transaction = null;
 
       if (notification.data?.signedTransactionInfo) {

@@ -64,4 +64,4 @@ curl -X POST http://localhost:8787 \
 
 **Informational events** (gray, ℹ️): everything else (renewal changes, expiry, billing failures, etc.)
 
-Sandbox notifications are tagged with `[SANDBOX]`.
+Sandbox notifications are dropped and never posted to Slack (the worker still returns 200 to Apple). Any that slip through the environment check would be tagged `[SANDBOX]`.
