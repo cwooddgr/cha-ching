@@ -116,7 +116,8 @@ function buildSlackMessage(notification, transaction) {
   }
 
   const sandboxTag = isSandbox ? " [SANDBOX]" : "";
-  const title = `${emoji} ${name} — ${description}${sandboxTag}`;
+  const familyTag = transaction?.inAppOwnershipType === "FAMILY_SHARED" ? " (Family Shared)" : "";
+  const title = `${emoji} ${name} — ${description}${familyTag}${sandboxTag}`;
   const lines = [];
 
   if (transaction) {
@@ -127,6 +128,11 @@ function buildSlackMessage(notification, transaction) {
     }
     if (transaction.productId) {
       lines.push(`Product: ${transaction.productId}`);
+    }
+    if (transaction.offerIdentifier) {
+      lines.push(`Offer: ${transaction.offerIdentifier}`);
+    } else if (transaction.offerType != null) {
+      lines.push(`Offer type: ${transaction.offerType}`);
     }
     if (transaction.transactionId) {
       lines.push(`Transaction: ${transaction.transactionId}`);
