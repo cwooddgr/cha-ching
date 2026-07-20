@@ -239,6 +239,19 @@ export default {
         }
       }
 
+      // Auto-renew-off is a bummer and not actionable — drop it. (Turn-ons,
+      // expirations, and refunds still come through.)
+      const autoRenewOff =
+        notification.notificationType === "DID_CHANGE_RENEWAL_STATUS" &&
+        (notification.subtype === "AUTO_RENEW_DISABLED" ||
+          (!notification.subtype &&
+            renewalInfo?.autoRenewStatus != null &&
+            renewalInfo.autoRenewStatus !== 1));
+      if (autoRenewOff) {
+        console.log("Skipping Auto-Renew Turned Off notification");
+        return new Response("OK", { status: 200 });
+      }
+
       const message = buildSlackMessage(notification, transaction, renewalInfo);
 
       try {
