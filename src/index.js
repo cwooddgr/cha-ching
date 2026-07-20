@@ -21,6 +21,13 @@ const REFUND_EVENTS = new Set([
   "REFUND_REVERSED",
 ]);
 
+const OFFER_TYPES = {
+  1: "Introductory offer",
+  2: "Promotional offer",
+  3: "Offer code",
+  4: "Win-back offer",
+};
+
 const EVENT_DESCRIPTIONS = {
   SUBSCRIBED: { INITIAL_BUY: "New Subscription", RESUBSCRIBE: "Resubscribed" },
   DID_RENEW: { _: "Subscription Renewed" },
@@ -123,14 +130,19 @@ function buildSlackMessage(notification, transaction) {
   if (transaction) {
     const price = formatPrice(transaction.price, transaction.currency);
     const flag = countryFlag(transaction.storefront);
-    if (price) {
+    if (transaction.offerDiscountType === "FREE_TRIAL") {
+      lines.push(flag ? `Free trial ${flag}` : "Free trial");
+    } else if (price) {
       lines.push(flag ? `${price} ${flag}` : price);
     }
     if (transaction.productId) {
       lines.push(`Product: ${transaction.productId}`);
     }
+    const offerName = OFFER_TYPES[transaction.offerType];
     if (transaction.offerIdentifier) {
-      lines.push(`Offer: ${transaction.offerIdentifier}`);
+      lines.push(`Offer: ${transaction.offerIdentifier}${offerName ? ` (${offerName})` : ""}`);
+    } else if (offerName) {
+      lines.push(`Offer: ${offerName}`);
     } else if (transaction.offerType != null) {
       lines.push(`Offer type: ${transaction.offerType}`);
     }
