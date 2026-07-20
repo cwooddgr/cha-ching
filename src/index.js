@@ -33,7 +33,11 @@ const EVENT_DESCRIPTIONS = {
   DID_RENEW: { _: "Subscription Renewed" },
   OFFER_REDEEMED: { INITIAL_BUY: "New Purchase via Offer", RESUBSCRIBE: "Resubscribed via Offer" },
   ONE_TIME_CHARGE: { _: "New Purchase" },
-  DID_CHANGE_RENEWAL_STATUS: { _: "Renewal Status Changed" },
+  DID_CHANGE_RENEWAL_STATUS: {
+    AUTO_RENEW_ENABLED: "Auto-Renew Turned On",
+    AUTO_RENEW_DISABLED: "Auto-Renew Turned Off",
+    _: "Renewal Status Changed",
+  },
   DID_CHANGE_RENEWAL_PREF: { _: "Subscription Plan Changed" },
   DID_FAIL_TO_RENEW: { _: "Renewal Failed" },
   EXPIRED: { _: "Subscription Expired" },
@@ -101,14 +105,24 @@ function appName(bundleId) {
   return APP_NAMES[bundleId] || bundleId || "Unknown App";
 }
 
-function buildSlackMessage(notification, transaction) {
+function buildSlackMessage(notification, transaction, renewalInfo) {
   const { notificationType, subtype, data } = notification;
   const isSandbox = data?.environment === "Sandbox";
   const key = eventKey(notificationType, subtype);
   const isRevenue = REVENUE_EVENTS.has(key);
   const isRefund = REFUND_EVENTS.has(notificationType);
   const name = appName(transaction?.bundleId);
-  const description = describeEvent(notificationType, subtype);
+  let description = describeEvent(notificationType, subtype);
+
+  // DID_CHANGE_RENEWAL_STATUS sometimes arrives without a subtype; the
+  // renewal info's autoRenewStatus (0 = off, 1 = on) carries the direction.
+  if (
+    notificationType === "DID_CHANGE_RENEWAL_STATUS" &&
+    !subtype &&
+    renewalInfo?.autoRenewStatus != null
+  ) {
+    description = renewalInfo.autoRenewStatus === 1 ? "Auto-Renew Turned On" : "Auto-Renew Turned Off";
+  }
 
   let emoji, color;
   if (isRevenue) {
@@ -151,7 +165,8 @@ function buildSlackMessage(notification, transaction) {
     }
   }
 
-  if (!isRevenue && !isRefund && subtype) {
+  const subtypeInDescription = EVENT_DESCRIPTIONS[notificationType]?.[subtype] != null;
+  if (!isRevenue && !isRefund && subtype && !subtypeInDescription) {
     lines.push(`Subtype: ${subtype}`);
   }
 
@@ -214,7 +229,17 @@ export default {
         }
       }
 
-      const message = buildSlackMessage(notification, transaction);
+      let renewalInfo = null;
+
+      if (notification.data?.signedRenewalInfo) {
+        try {
+          renewalInfo = decodeJWSPayload(notification.data.signedRenewalInfo);
+        } catch (e) {
+          console.error("Failed to decode signedRenewalInfo:", e);
+        }
+      }
+
+      const message = buildSlackMessage(notification, transaction, renewalInfo);
 
       try {
         await postToSlack(env.SLACK_WEBHOOK_URL, message);
