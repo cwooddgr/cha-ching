@@ -62,6 +62,9 @@ curl -X POST http://localhost:8787 \
 
 **Refund events** (red, ⚠️): `REFUND`, `REFUND_REVERSED`
 
-**Informational events** (gray, ℹ️): everything else (renewal changes, expiry, billing failures, etc.)
+**Informational events** (gray, ℹ️): everything else (renewal changes, billing failures, etc.)
 
-Sandbox notifications are dropped and never posted to Slack (the worker still returns 200 to Apple). Any that slip through the environment check would be tagged `[SANDBOX]`.
+**Dropped** (never posted to Slack, worker still returns 200 to Apple):
+- Sandbox notifications. Any that slip through the environment check would be tagged `[SANDBOX]`.
+- `DID_CHANGE_RENEWAL_STATUS` with auto-renew turned off — a bummer, and not actionable.
+- `EXPIRED` — by the time it lands, auto-renew was already off.

@@ -240,7 +240,7 @@ export default {
       }
 
       // Auto-renew-off is a bummer and not actionable — drop it. (Turn-ons,
-      // expirations, and refunds still come through.)
+      // refunds, and renewal failures still come through.)
       const autoRenewOff =
         notification.notificationType === "DID_CHANGE_RENEWAL_STATUS" &&
         (notification.subtype === "AUTO_RENEW_DISABLED" ||
@@ -249,6 +249,13 @@ export default {
             renewalInfo.autoRenewStatus !== 1));
       if (autoRenewOff) {
         console.log("Skipping Auto-Renew Turned Off notification");
+        return new Response("OK", { status: 200 });
+      }
+
+      // Same for expirations — by the time one lands, auto-renew was already
+      // off and there's nothing to do about it.
+      if (notification.notificationType === "EXPIRED") {
+        console.log("Skipping Subscription Expired notification");
         return new Response("OK", { status: 200 });
       }
 
