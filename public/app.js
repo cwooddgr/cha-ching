@@ -35,6 +35,27 @@
   let currentWindow = "7d";
   let refreshTimer = null;
 
+  // The selected window survives a reload. Without this, a refresh silently
+  // snapped back to 7D while the numbers on screen had been 30D — which reads
+  // as the data changing rather than the window changing.
+  const WINDOW_STORE_KEY = "cc_window";
+
+  function storedWindow() {
+    try {
+      return localStorage.getItem(WINDOW_STORE_KEY);
+    } catch {
+      return null; // storage disabled — fall back to the default
+    }
+  }
+
+  function storeWindow(key) {
+    try {
+      localStorage.setItem(WINDOW_STORE_KEY, key);
+    } catch {
+      /* not worth surfacing; the session still works, it just won't persist */
+    }
+  }
+
   // ── formatting ────────────────────────────────────────────────────────
 
   const usd = (n) =>
@@ -140,14 +161,26 @@
     }
   }
 
+  function selectWindow(key, persist) {
+    const btn = document.querySelector(`.window-select button[data-window="${key}"]`);
+    if (!btn) return; // stale stored value from an older set of windows
+    document.querySelectorAll(".window-select button").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    currentWindow = key;
+    if (persist) storeWindow(key);
+  }
+
   document.querySelectorAll(".window-select button").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".window-select button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-      currentWindow = btn.dataset.window;
+      selectWindow(btn.dataset.window, true);
       render();
     });
   });
+
+  // Restore before the first paint, so the initial render is already in the
+  // right window rather than flashing 7D and jumping.
+  const saved = storedWindow();
+  if (saved) selectWindow(saved, false);
 
   function render() {
     if (!stats) return;
