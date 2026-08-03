@@ -416,13 +416,13 @@ async function handleStats(env) {
     keys.push(`agg:${key}`);
     statements.push(
       env.DB.prepare(
-        `SELECT bundle_id, notification_type, subtype, offer_discount_type,
+        `SELECT bundle_id, notification_type, subtype, offer_discount_type, offer_type,
                 COUNT(*) AS n,
                 SUM(CASE WHEN price IS NOT NULL AND usd_rate IS NOT NULL THEN price * usd_rate ELSE 0 END) AS usd_millis,
                 SUM(CASE WHEN price IS NOT NULL AND price > 0 AND usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
          FROM notifications LEFT JOIN fx_rates USING (currency)
          WHERE environment = 'Production' AND signed_date >= ?
-         GROUP BY bundle_id, notification_type, subtype, offer_discount_type`
+         GROUP BY bundle_id, notification_type, subtype, offer_discount_type, offer_type`
       ).bind(since)
     );
     // Trial outcomes, anchored on RESOLUTION (the trial's own end date), not on
@@ -559,7 +559,7 @@ async function handleStats(env) {
         apps[k] = {
           name: appName(k),
           revenue_usd: 0, refunds_usd: 0, events: 0,
-          new_subs: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
+          new_subs: 0, offer_codes: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
           trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
           trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
           auto_renew_off: 0, expired: 0, renewal_failed: 0, unknown_fx: 0,
@@ -581,12 +581,15 @@ async function handleStats(env) {
         a.refunds -= r.n;
         a.refunds_usd -= (r.usd_millis || 0) / 1000;
       }
-      if (r.notification_type === "SUBSCRIBED" && r.subtype === "INITIAL_BUY") {
+      // How a subscription started. Offer-code redemptions (offerType 3) are
+      // kept out of new_subs: they're promo redemptions at a discounted price,
+      // not organic paid signups, and lumping them together overstates both the
+      // count and the average revenue per subscriber. A code that grants a free
+      // trial still counts as a trial start — it behaves like one.
+      if (["SUBSCRIBED", "OFFER_REDEEMED"].includes(r.notification_type) && r.subtype === "INITIAL_BUY") {
         if (r.offer_discount_type === "FREE_TRIAL") a.trial_starts += r.n;
+        else if (r.offer_type === 3) a.offer_codes += r.n;
         else a.new_subs += r.n;
-      }
-      if (r.notification_type === "OFFER_REDEEMED" && r.subtype === "INITIAL_BUY" && r.offer_discount_type === "FREE_TRIAL") {
-        a.trial_starts += r.n;
       }
       if ((r.notification_type === "SUBSCRIBED" || r.notification_type === "OFFER_REDEEMED") && r.subtype === "RESUBSCRIBE") {
         a.resubscribes += r.n;
@@ -616,7 +619,7 @@ async function handleStats(env) {
     const total = {
       name: "All Products",
       revenue_usd: 0, refunds_usd: 0, events: 0,
-      new_subs: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
+      new_subs: 0, offer_codes: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
       trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
       trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
       auto_renew_off: 0, expired: 0, renewal_failed: 0, unknown_fx: 0,
@@ -694,6 +697,7 @@ TABLE fx_rates (currency TEXT PRIMARY KEY, usd_rate REAL)  -- static approximate
 - Apps: CD Wally (cdwally, one-time unlock), Countdowns (countdowns, one-time unlock + subscription), Overflight (overflight, subscription with free trial; launched 2026-07-20), HeyMuso (heymuso, unreleased).
 - Revenue events: DID_RENEW, ONE_TIME_CHARGE, and SUBSCRIBED/OFFER_REDEEMED with subtype INITIAL_BUY or RESUBSCRIBE — excluding rows where offer_discount_type = 'FREE_TRIAL' or price = 0.
 - Estimated USD revenue: SUM(price * usd_rate) / 1000.0 joining fx_rates on currency. All revenue figures are ESTIMATES of gross customer price (no Apple commission, static FX). Estimated proceeds ≈ 85% of gross (small business program).
+- Subscription starts split three ways on INITIAL_BUY: free trial (offer_discount_type = 'FREE_TRIAL'), offer-code redemption (offer_type = 3, a promo code at a discounted price — NOT an organic paid signup), and organic paid. Overflight has no immediate-buy option, so every organic start is a trial; its only offer code so far is 'beta-thanks-2026' ($9.99 vs $19.99 yearly, launch week only). Keep codes out of "new subscribers" — they overstate both count and revenue per subscriber.
 - Trial start: subtype = 'INITIAL_BUY' AND offer_discount_type = 'FREE_TRIAL'. The trial's own expires_date is when it ends. Overflight's trial is 7 days.
 - Trial conversion: a later paid revenue event with the same original_transaction_id.
 - IMPORTANT — conversion rate must be measured over RESOLVED trials only: those whose expires_date has passed. A trial still inside its period has not had the chance to convert and must never count as a failure; report those separately as pending. Rate = converted / resolved, NOT converted / all starts (that understates it badly while an app is young).
@@ -947,6 +951,17 @@ export default {
       }
       if (pathname === "/api/stats" && request.method === "GET") {
         return handleStats(env);
+      }
+      // Cheap watermark for the dashboard's live poll: a few bytes and one
+      // indexed lookup, so the client can check "has anything landed?" often
+      // without paying for the full stats batch. Count is included so a
+      // backfill of older rows registers too, not just newer ones.
+      if (pathname === "/api/pulse" && request.method === "GET") {
+        const row = await env.DB.prepare(
+          `SELECT COUNT(*) AS count, MAX(signed_date) AS newest
+           FROM notifications WHERE environment = 'Production'`
+        ).first();
+        return json({ count: row?.count || 0, newest: row?.newest || null });
       }
       if (pathname === "/api/chat" && request.method === "POST") {
         return handleChat(request, env, ctx);

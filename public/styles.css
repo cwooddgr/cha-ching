@@ -330,6 +330,16 @@ body {
   white-space: nowrap;
 }
 .feed-row:hover { background: rgba(53,224,255,0.05); }
+/* An event that landed since the last paint — sweep it once and settle. */
+.feed-row.fresh { animation: feed-arrive 2.2s cubic-bezier(0.2, 0.8, 0.2, 1) 1; }
+@keyframes feed-arrive {
+  0%   { background: rgba(53,224,255,0.30); box-shadow: inset 2px 0 0 var(--cyan); }
+  15%  { background: rgba(53,224,255,0.22); box-shadow: inset 2px 0 0 var(--cyan); }
+  100% { background: transparent; box-shadow: inset 2px 0 0 transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-row.fresh { animation: none; box-shadow: inset 2px 0 0 var(--cyan); }
+}
 .feed-time { color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .feed-app { color: var(--cyan); letter-spacing: 0.1em; }
 .feed-desc { overflow: hidden; text-overflow: ellipsis; }

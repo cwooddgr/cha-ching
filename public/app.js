@@ -9,6 +9,13 @@
   // wide — shown, but visually marked as not-a-trend.
   const LOW_CONFIDENCE_TRIALS = 10;
 
+  const PULSE_MS = 10000;         // watermark check — cheap, so run it often
+  const FULL_REFRESH_MS = 120000; // catches time-drift even when nothing lands
+
+  // Event IDs on screen as of the last paint; null until the first one, so the
+  // initial render doesn't treat every row as newly arrived.
+  let seenEvents = null;
+
   const APP_CODES = {
     "co.dgrlabs.cdwally": "CDW",
     "co.dgrlabs.countdowns": "CTD",
@@ -80,10 +87,17 @@
       $("#auth").classList.add("hidden");
       $("#console").classList.remove("hidden");
       loadStats();
+      startPulse();
     } catch {
       $("#auth-error").textContent = "LINK FAILURE";
     }
   });
+
+  let pulseTimer = null;
+  function startPulse() {
+    if (pulseTimer) return;
+    pulseTimer = setInterval(pulse, PULSE_MS);
+  }
 
   // ── stats ─────────────────────────────────────────────────────────────
 
@@ -105,7 +119,25 @@
       console.error(e);
     }
     clearTimeout(refreshTimer);
-    refreshTimer = setTimeout(loadStats, 120000);
+    refreshTimer = setTimeout(loadStats, FULL_REFRESH_MS);
+  }
+
+  // Live updates without pushing: poll a tiny watermark endpoint often, and
+  // only pay for the full stats batch when something has actually landed. The
+  // slow full refresh above still runs regardless, because plenty of numbers
+  // drift with time alone — windows slide, trials mature, the projection moves.
+  let watermark = null;
+  async function pulse() {
+    try {
+      const resp = await fetch("/api/pulse");
+      if (!resp.ok) return;
+      const p = await resp.json();
+      const seen = `${p.count}:${p.newest}`;
+      if (watermark != null && seen !== watermark) loadStats();
+      watermark = seen;
+    } catch {
+      /* transient — the next full refresh will surface a real outage */
+    }
   }
 
   document.querySelectorAll(".window-select button").forEach((btn) => {
@@ -160,6 +192,7 @@
     // tiles
     const tiles = [
       { label: "NEW SUBS · PAID", value: num(t.new_subs) },
+      { label: "OFFER CODES", value: num(t.offer_codes) },
       { label: "TRIAL STARTS", value: num(t.trial_starts) },
       { label: "TRIALS RESOLVED", value: num(t.trials_resolved) },
       { label: "TRIAL CONVERSIONS", value: num(t.trial_conversions), sub: usd(t.trial_conversion_usd) },
@@ -204,6 +237,7 @@
                 </div>
                 <div class="app-stats">
                   <span>subs <b>${num(a.new_subs)}</b></span>
+                  ${a.offer_codes ? `<span>codes <b>${num(a.offer_codes)}</b></span>` : ""}
                   <span>trials <b>${num(a.trial_conversions)}</b>/<b>${num(a.trials_resolved)}</b>${
                     a.trials_in_flight ? ` <span class="pending">+${num(a.trials_in_flight)} pending</span>` : ""
                   }</span>
@@ -236,8 +270,11 @@
               ? "TRIAL"
               : "";
         const sandbox = ev.environment === "Sandbox";
+        // Flash rows that weren't on screen a moment ago — but never on the
+        // first paint, or the whole feed lights up on load.
+        const fresh = seenEvents !== null && !seenEvents.has(ev.notification_uuid);
         return `
-        <div class="feed-row">
+        <div class="feed-row${fresh ? " fresh" : ""}">
           <span class="feed-time">${utcStamp(ev.signed_date)}</span>
           <span class="feed-app">${APP_CODES[ev.bundle_id] || "—"}</span>
           <span class="feed-desc ${cls}"><span class="glyph">${glyph}</span>${desc}${sandbox ? " [SBX]" : ""}</span>
@@ -245,6 +282,7 @@
         </div>`;
       })
       .join("");
+    seenEvents = new Set(feed.map((ev) => ev.notification_uuid));
     $("#feed-note").textContent = `LAST ${feed.length}`;
 
     // meta
@@ -460,7 +498,8 @@
       stats = await resp.json();
       $("#console").classList.remove("hidden");
       render();
-      refreshTimer = setTimeout(loadStats, 120000);
+      refreshTimer = setTimeout(loadStats, FULL_REFRESH_MS);
+      startPulse();
     } catch {
       showAuth("LINK FAILURE — RETRY");
     }
