@@ -253,6 +253,13 @@ body {
   font-family: var(--mono); font-size: 9px; color: var(--ink-3);
   text-align: center; letter-spacing: 0.04em; margin-top: 1px; max-width: 150px;
 }
+/* Secondary to the actual rate: it's a model output, not a measurement. */
+.gauge-projected {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-3);
+  text-align: center; letter-spacing: 0.14em; margin-top: 3px;
+}
+.gauge-projected b { color: var(--ink-2); font-weight: 600; }
+
 /* Too few resolved trials for the rate to mean much — drain the colour so it
    doesn't read as a confident signal. */
 .hero-gauge.thin .gauge-arc { stroke: var(--ink-3); filter: none; opacity: 0.75; }

@@ -333,6 +333,79 @@ const WINDOWS = {
   all: null,
 };
 
+// Where the trial conversion rate is heading, once every trial running today
+// has resolved.
+//
+// The naive projection — "uncancelled trials will convert at the rate
+// uncancelled trials historically convert" — reads high, because cancellation
+// is heavily front-loaded (most cancels land on day 0) and the pending pool is
+// mostly trials that just started. Assuming a day-0 trial is as safe as a
+// day-6 trial repeats, one level up, the same mistake as counting in-flight
+// trials as failures.
+//
+// So: build a per-day cancellation hazard from trials that have already
+// resolved, then condition each in-flight trial on how far it has actually
+// got. Everything is derived from the data — nothing is hardcoded — so the
+// model sharpens on its own as trials accumulate.
+const HAZARD_BUCKETS = 7; // fractions of a trial, not days, so any length works
+
+function projectTrials(rows, now) {
+  const matured = rows.filter((r) => r.trial_end <= now);
+  const inFlight = rows.filter((r) => r.trial_end > now);
+  const bucketOf = (r, at) => {
+    const span = r.trial_end - r.start;
+    if (span <= 0) return 0;
+    const b = Math.floor(((at - r.start) / span) * HAZARD_BUCKETS);
+    return Math.max(0, Math.min(HAZARD_BUCKETS - 1, b));
+  };
+  const cancelledInTrial = (r) => r.cancel_at != null && r.cancel_at < r.trial_end;
+
+  // Outcome rates by cancellation status, from resolved trials.
+  const settled = { yes: { n: 0, conv: 0 }, no: { n: 0, conv: 0 } };
+  for (const r of matured) {
+    const bucket = settled[cancelledInTrial(r) ? "yes" : "no"];
+    bucket.n += 1;
+    bucket.conv += r.converted ? 1 : 0;
+  }
+  if (!matured.length || !settled.no.n) return null;
+  const pConvClean = settled.no.conv / settled.no.n;
+  const pConvCancelled = settled.yes.n ? settled.yes.conv / settled.yes.n : 0;
+
+  // Cancellation hazard: of the trials still alive entering each bucket, how
+  // many cancelled in it. Survivors carry forward.
+  const cancels = new Array(HAZARD_BUCKETS).fill(0);
+  for (const r of matured) {
+    if (cancelledInTrial(r)) cancels[bucketOf(r, r.cancel_at)] += 1;
+  }
+  // atRisk[b] = trials that reached bucket b without cancelling.
+  const atRisk = new Array(HAZARD_BUCKETS).fill(0);
+  let alive = matured.length;
+  for (let b = 0; b < HAZARD_BUCKETS; b += 1) {
+    atRisk[b] = alive;
+    alive -= cancels[b];
+  }
+  // Probability a trial that has survived through bucket b cancels before it ends.
+  const cancelsAfter = (b) => {
+    let remaining = 0;
+    for (let i = b + 1; i < HAZARD_BUCKETS; i += 1) remaining += cancels[i];
+    const survivors = atRisk[b] - cancels[b];
+    return survivors > 0 ? remaining / survivors : 0;
+  };
+
+  let expected = matured.reduce((sum, r) => sum + (r.converted ? 1 : 0), 0);
+  for (const r of inFlight) {
+    if (r.cancel_at != null) {
+      expected += pConvCancelled;
+    } else {
+      const pCancelLater = cancelsAfter(bucketOf(r, now));
+      expected += (1 - pCancelLater) * pConvClean + pCancelLater * pConvCancelled;
+    }
+  }
+
+  const total = rows.length;
+  return total > 0 ? { rate: expected / total, trials: total } : null;
+}
+
 async function handleStats(env) {
   const now = Date.now();
   const statements = [];
@@ -420,6 +493,31 @@ async function handleStats(env) {
          AND t.expires_date > ?
        GROUP BY t.bundle_id`
     ).bind(now)
+  );
+
+  // One row per trial, for the projection below. Small table (hundreds of
+  // rows), so the modelling happens in JS where it can be read.
+  keys.push("trial_rows");
+  statements.push(
+    env.DB.prepare(
+      `SELECT t.bundle_id, t.signed_date AS start, t.expires_date AS trial_end,
+              (SELECT MIN(c.signed_date) FROM notifications c
+                WHERE c.original_transaction_id = t.original_transaction_id
+                  AND c.notification_type = 'DID_CHANGE_RENEWAL_STATUS'
+                  AND c.subtype = 'AUTO_RENEW_DISABLED'
+                  AND c.signed_date > t.signed_date) AS cancel_at,
+              EXISTS (SELECT 1 FROM notifications p
+                WHERE p.original_transaction_id = t.original_transaction_id
+                  AND p.price > 0 AND p.signed_date > t.signed_date
+                  AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
+                  AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
+                       OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
+                           AND p.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))) AS converted
+       FROM notifications t
+       WHERE t.environment = 'Production'
+         AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+         AND t.expires_date IS NOT NULL AND t.expires_date > t.signed_date`
+    )
   );
 
   keys.push("feed");
@@ -532,10 +630,22 @@ async function handleStats(env) {
     windows[key] = { apps, total };
   }
 
+  // Projection describes the pending pool as it stands, so it is deliberately
+  // not window-scoped — changing the window selector must not move it.
+  const trialRows = byKey.trial_rows || [];
+  const projection = { total: projectTrials(trialRows, now), apps: {} };
+  for (const id of new Set(trialRows.map((r) => r.bundle_id))) {
+    projection.apps[id] = projectTrials(
+      trialRows.filter((r) => r.bundle_id === id),
+      now
+    );
+  }
+
   const meta = byKey.meta?.[0] || {};
   return json({
     generated_at: now,
     windows,
+    projection,
     feed: byKey.feed || [],
     meta: {
       total_events: meta.total || 0,

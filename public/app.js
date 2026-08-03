@@ -149,6 +149,14 @@
       ? `${num(t.trials_in_flight)} still in trial · ${num(t.trials_canceled_in_flight)} already canceled`
       : "";
 
+    // Where the rate lands once everything currently running has resolved.
+    // Not window-scoped — it describes the pending pool, so it stays put as
+    // the window selector changes.
+    const proj = stats.projection?.total;
+    $("#gauge-projected").innerHTML = proj
+      ? `PROJECTED <b>${Math.round(proj.rate * 100)}%</b>`
+      : "";
+
     // tiles
     const tiles = [
       { label: "NEW SUBS · PAID", value: num(t.new_subs) },
