@@ -1,5 +1,45 @@
 # cha-ching — notes
 
+## RESOLVED: Family Sharing copies were counted as revenue
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-03
+> **Status:** decided-by-user (Charlie caught it and chose full exclusion; applied and deployed same day)
+
+Charlie asked whether the revenue totals were counting Family Sharing
+notifications. They were.
+
+When a customer buys a Family Sharing–enabled product, Apple sends one extra
+notification per family member with `inAppOwnershipType = FAMILY_SHARED` and the
+**full product price** populated, even though that family member paid nothing —
+Apple's own definition is "the transaction belongs to a family member who
+benefits from service." The stats layer never looked at the column, so each
+shared copy was added as a fresh sale.
+
+Confirmed as duplication, not extra sales: grouping CD Wally's `ONE_TIME_CHARGE`
+rows by `purchase_date` gives clean clusters of exactly 1 `PURCHASED` + N
+`FAMILY_SHARED` sharing one purchase timestamp (1+4 three separate times, plus
+smaller clusters). Each shared copy has its own `transaction_id` and no
+`original_transaction_id` overlap with the purchaser, so no ID-based dedupe would
+have caught it.
+
+Impact, CD Wally lifetime: revenue $1,024.68 → **$465.56** (55% of it was
+phantom), one-time purchases 56 → 25. Last 30 days: 11 events / $219.89 removed.
+Overflight was unaffected — zero family-shared rows — so its figures and the
+whole trial funnel (193 resolved / 23 converted) are unchanged, verified before
+and after.
+
+Fix: `in_app_ownership_type` added to the agg query's SELECT/GROUP BY, then
+family-shared rows counted toward `events` only and skipped for revenue, refunds
+and every purchase counter; the same exclusion added to both trial-conversion
+subqueries and the three trial-start predicates (defensive — no family-shared
+subscriptions exist yet, but Pro could become shareable); and a CRITICAL bullet
+added to `CHAT_SYSTEM` so ad-hoc chat queries don't reintroduce it.
+
+Worth carrying into the v2 Sales Reports work below: Apple's sales reports count
+units the same way, so the fusion layer needs the same rule or it will disagree
+with the notification layer.
+
 ## v2: fuse Sales Reports with notification estimates
 
 > **Author:** Claude Code (planner)

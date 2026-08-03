@@ -417,12 +417,14 @@ async function handleStats(env) {
     statements.push(
       env.DB.prepare(
         `SELECT bundle_id, notification_type, subtype, offer_discount_type, offer_type,
+                in_app_ownership_type,
                 COUNT(*) AS n,
                 SUM(CASE WHEN price IS NOT NULL AND usd_rate IS NOT NULL THEN price * usd_rate ELSE 0 END) AS usd_millis,
                 SUM(CASE WHEN price IS NOT NULL AND price > 0 AND usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
          FROM notifications LEFT JOIN fx_rates USING (currency)
          WHERE environment = 'Production' AND signed_date >= ?
-         GROUP BY bundle_id, notification_type, subtype, offer_discount_type, offer_type`
+         GROUP BY bundle_id, notification_type, subtype, offer_discount_type, offer_type,
+                  in_app_ownership_type`
       ).bind(since)
     );
     // Trial outcomes, anchored on RESOLUTION (the trial's own end date), not on
@@ -457,6 +459,7 @@ async function handleStats(env) {
                   p.price AS price, fx.usd_rate AS usd_rate
            FROM notifications p LEFT JOIN fx_rates fx ON fx.currency = p.currency
            WHERE p.price > 0
+             AND (p.in_app_ownership_type IS NULL OR p.in_app_ownership_type != 'FAMILY_SHARED')
              AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
              AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
                   OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
@@ -465,6 +468,7 @@ async function handleStats(env) {
          ) pay ON pay.oid = t.original_transaction_id AND pay.first_paid > t.signed_date
          WHERE t.environment = 'Production'
            AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+           AND (t.in_app_ownership_type IS NULL OR t.in_app_ownership_type != 'FAMILY_SHARED')
            AND t.expires_date IS NOT NULL
            AND t.expires_date <= ? AND t.expires_date >= ?
          GROUP BY t.bundle_id`
@@ -490,6 +494,7 @@ async function handleStats(env) {
        FROM notifications t
        WHERE t.environment = 'Production'
          AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+         AND (t.in_app_ownership_type IS NULL OR t.in_app_ownership_type != 'FAMILY_SHARED')
          AND t.expires_date > ?
        GROUP BY t.bundle_id`
     ).bind(now)
@@ -509,6 +514,7 @@ async function handleStats(env) {
               EXISTS (SELECT 1 FROM notifications p
                 WHERE p.original_transaction_id = t.original_transaction_id
                   AND p.price > 0 AND p.signed_date > t.signed_date
+                  AND (p.in_app_ownership_type IS NULL OR p.in_app_ownership_type != 'FAMILY_SHARED')
                   AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
                   AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
                        OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
@@ -516,6 +522,7 @@ async function handleStats(env) {
        FROM notifications t
        WHERE t.environment = 'Production'
          AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+         AND (t.in_app_ownership_type IS NULL OR t.in_app_ownership_type != 'FAMILY_SHARED')
          AND t.expires_date IS NOT NULL AND t.expires_date > t.signed_date`
     )
   );
@@ -571,6 +578,13 @@ async function handleStats(env) {
     for (const r of agg) {
       const a = app(r.bundle_id);
       a.events += r.n;
+      // Family Sharing copies are not sales. When one customer buys a shareable
+      // product, Apple sends an extra notification per family member with
+      // inAppOwnershipType = FAMILY_SHARED and the FULL product price attached,
+      // even though nobody paid for that copy. Counting them turned CD Wally's
+      // 23 real unlocks into 56 and more than doubled its revenue. They stay in
+      // `events` (they really did arrive) but count toward nothing else.
+      if (r.in_app_ownership_type === "FAMILY_SHARED") continue;
       a.unknown_fx += r.unknown_fx;
       if (isRevenueRow(r)) a.revenue_usd += (r.usd_millis || 0) / 1000;
       if (r.notification_type === "REFUND") {
@@ -696,6 +710,7 @@ TABLE fx_rates (currency TEXT PRIMARY KEY, usd_rate REAL)  -- static approximate
 
 - Apps: CD Wally (cdwally, one-time unlock), Countdowns (countdowns, one-time unlock + subscription), Overflight (overflight, subscription with free trial; launched 2026-07-20), HeyMuso (heymuso, unreleased).
 - Revenue events: DID_RENEW, ONE_TIME_CHARGE, and SUBSCRIBED/OFFER_REDEEMED with subtype INITIAL_BUY or RESUBSCRIBE — excluding rows where offer_discount_type = 'FREE_TRIAL' or price = 0.
+- CRITICAL — always exclude in_app_ownership_type = 'FAMILY_SHARED' from any revenue, purchase-count, or conversion query. Apple sends one extra notification per family member when a shareable product is bought, carrying the FULL product price even though that family member paid nothing. They are the same sale, duplicated. Every cluster in this data is exactly 1 PURCHASED + N FAMILY_SHARED sharing one purchase_date. Counting them once inflated CD Wally's unlocks from 23 to 56 and its revenue from $466 to $1,025. Only count them when the question is explicitly about family sharing reach.
 - Estimated USD revenue: SUM(price * usd_rate) / 1000.0 joining fx_rates on currency. All revenue figures are ESTIMATES of gross customer price (no Apple commission, static FX). Estimated proceeds ≈ 85% of gross (small business program).
 - Subscription starts split three ways on INITIAL_BUY: free trial (offer_discount_type = 'FREE_TRIAL'), offer-code redemption (offer_type = 3, a promo code at a discounted price — NOT an organic paid signup), and organic paid. Overflight has no immediate-buy option, so every organic start is a trial; its only offer code so far is 'beta-thanks-2026' ($9.99 vs $19.99 yearly, launch week only). Keep codes out of "new subscribers" — they overstate both count and revenue per subscriber.
 - Trial start: subtype = 'INITIAL_BUY' AND offer_discount_type = 'FREE_TRIAL'. The trial's own expires_date is when it ends. Overflight's trial is 7 days.
