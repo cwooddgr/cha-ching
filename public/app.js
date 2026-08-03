@@ -170,9 +170,11 @@
                 <div class="app-code">${APP_CODES[id] || "—"} · ${id.split(".").pop().toUpperCase()}</div>
               </div>
               <div class="app-data">
-                <div class="app-bar-track">
-                  <div class="app-bar" style="width:${pct}%"></div>
-                  <div class="app-bar-label">${usd(a.revenue_usd)}</div>
+                <div class="app-bar-row">
+                  <div class="app-bar-track">
+                    <div class="app-bar" style="width:${pct}%"></div>
+                  </div>
+                  <div class="app-bar-amount">${usd(a.revenue_usd)}</div>
                 </div>
                 <div class="app-stats">
                   <span>subs <b>${num(a.new_subs)}</b></span>
