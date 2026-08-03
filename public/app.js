@@ -5,6 +5,10 @@
 
   const $ = (sel) => document.querySelector(sel);
 
+  // Below this many resolved trials, the conversion rate is one or two people
+  // wide — shown, but visually marked as not-a-trend.
+  const LOW_CONFIDENCE_TRIALS = 10;
+
   const APP_CODES = {
     "co.dgrlabs.cdwally": "CDW",
     "co.dgrlabs.countdowns": "CTD",
@@ -124,18 +128,32 @@
     $("#hero-proceeds").textContent = usd(t.revenue_usd * 0.85);
     $("#hero-refunds").textContent = "−" + usd(t.refunds_usd);
 
-    // trial conversion gauge: conversions vs trial starts in the window
-    const convRate = t.trial_starts > 0 ? Math.min(1, t.trial_conversions / t.trial_starts) : null;
+    // Trial conversion gauge: converted vs RESOLVED trials — trials whose own
+    // period ended inside the window. Trials still running are excluded from
+    // both halves (they haven't had their chance yet) and reported separately.
+    const resolved = t.trials_resolved;
+    const convRate = resolved > 0 ? Math.min(1, t.trial_conversions / resolved) : null;
     const arc = $("#gauge-arc");
     const circumference = 2 * Math.PI * 70;
     arc.setAttribute("stroke-dasharray", circumference);
     arc.style.strokeDashoffset = convRate == null ? circumference : circumference * (1 - convRate);
     $("#gauge-pct").textContent = convRate == null ? "—" : Math.round(convRate * 100) + "%";
 
+    // A handful of trials can swing the rate by tens of points, so say so
+    // rather than letting a 1-of-2 window read like a trend.
+    const thin = resolved > 0 && resolved < LOW_CONFIDENCE_TRIALS;
+    $("#gauge").classList.toggle("thin", thin);
+    $("#gauge-basis").textContent =
+      resolved > 0 ? `${num(t.trial_conversions)} of ${num(resolved)} resolved` : "no trials resolved yet";
+    $("#gauge-pending").textContent = t.trials_in_flight
+      ? `${num(t.trials_in_flight)} still in trial · ${num(t.trials_canceled_in_flight)} already canceled`
+      : "";
+
     // tiles
     const tiles = [
       { label: "NEW SUBS · PAID", value: num(t.new_subs) },
       { label: "TRIAL STARTS", value: num(t.trial_starts) },
+      { label: "TRIALS RESOLVED", value: num(t.trials_resolved) },
       { label: "TRIAL CONVERSIONS", value: num(t.trial_conversions), sub: usd(t.trial_conversion_usd) },
       { label: "RENEWALS", value: num(t.renewals) },
       { label: "RESUBSCRIBES", value: num(t.resubscribes) },
@@ -178,7 +196,9 @@
                 </div>
                 <div class="app-stats">
                   <span>subs <b>${num(a.new_subs)}</b></span>
-                  <span>trials <b>${num(a.trial_starts)}</b>▸<b>${num(a.trial_conversions)}</b></span>
+                  <span>trials <b>${num(a.trial_conversions)}</b>/<b>${num(a.trials_resolved)}</b>${
+                    a.trials_in_flight ? ` <span class="pending">+${num(a.trials_in_flight)} pending</span>` : ""
+                  }</span>
                   <span>renew <b>${num(a.renewals)}</b></span>
                   <span>1x <b>${num(a.one_time)}</b></span>
                   ${a.refunds ? `<span class="bad">refunds ${num(a.refunds)}</span>` : ""}

@@ -248,6 +248,15 @@ body {
   text-anchor: middle;
 }
 .gauge-sub { fill: var(--ink-3); font-family: var(--mono); font-size: 8.5px; letter-spacing: 0.2em; text-anchor: middle; }
+.gauge-basis { fill: var(--ink-2); font-family: var(--mono); font-size: 7.5px; letter-spacing: 0.06em; text-anchor: middle; }
+.gauge-pending {
+  font-family: var(--mono); font-size: 9px; color: var(--ink-3);
+  text-align: center; letter-spacing: 0.04em; margin-top: 1px; max-width: 150px;
+}
+/* Too few resolved trials for the rate to mean much — drain the colour so it
+   doesn't read as a confident signal. */
+.hero-gauge.thin .gauge-arc { stroke: var(--ink-3); filter: none; opacity: 0.75; }
+.hero-gauge.thin .gauge-text { fill: var(--ink-2); }
 
 /* ── signal tiles ───────────────────────────────────────────────────── */
 
@@ -299,6 +308,7 @@ body {
 .app-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 5px; font-size: 10px; color: var(--ink-2); letter-spacing: 0.05em; }
 .app-stats b { color: var(--ink); font-weight: 600; }
 .app-stats .warn { color: var(--amber); }
+.app-stats .pending { color: var(--ink-3); }
 .app-stats .bad { color: var(--red); }
 
 /* ── event feed ─────────────────────────────────────────────────────── */

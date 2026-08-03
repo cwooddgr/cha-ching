@@ -352,29 +352,75 @@ async function handleStats(env) {
          GROUP BY bundle_id, notification_type, subtype, offer_discount_type`
       ).bind(since)
     );
-    keys.push(`conv:${key}`);
+    // Trial outcomes, anchored on RESOLUTION (the trial's own end date), not on
+    // the start date and not on the arrival of an EXPIRED notification.
+    //
+    // A trial has exactly one terminal outcome, decided when its trial period
+    // ends: it either renewed into a paid subscription or it didn't. Cancelling
+    // mid-trial is a *reason* for the latter, not a separate outcome — counting
+    // it separately would double-count the same person (every EXPIRED trial in
+    // our data also has an AUTO_RENEW_DISABLED).
+    //
+    // No settle grace is applied: Apple bills in advance, so DID_RENEW lands
+    // ~8h BEFORE expires_date. By the time a trial resolves the verdict is
+    // already in hand. (Billing retry is the rare exception — those read as
+    // unconverted until the retry succeeds, then correct themselves, since
+    // every load recomputes from raw notifications.)
+    keys.push(`trial:${key}`);
     statements.push(
       env.DB.prepare(
-        `SELECT p.bundle_id, COUNT(*) AS n,
-                SUM(CASE WHEN fx.usd_rate IS NOT NULL THEN p.price * fx.usd_rate ELSE 0 END) AS usd_millis
-         FROM notifications p LEFT JOIN fx_rates fx ON fx.currency = p.currency
-         WHERE p.environment = 'Production' AND p.signed_date >= ?
-           AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
-                OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED') AND p.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))
-           AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
-           AND p.price > 0
-           AND EXISTS (SELECT 1 FROM notifications t
-                       WHERE t.original_transaction_id = p.original_transaction_id
-                         AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY')
-           AND NOT EXISTS (SELECT 1 FROM notifications q
-                           WHERE q.original_transaction_id = p.original_transaction_id
-                             AND q.price > 0 AND q.signed_date < p.signed_date
-                             AND (q.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
-                                  OR (q.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED') AND q.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE'))))
-         GROUP BY p.bundle_id`
-      ).bind(since)
+        `SELECT t.bundle_id,
+                COUNT(*) AS resolved,
+                SUM(CASE WHEN pay.oid IS NOT NULL THEN 1 ELSE 0 END) AS converted,
+                SUM(CASE WHEN pay.oid IS NOT NULL AND pay.usd_rate IS NOT NULL
+                         THEN pay.price * pay.usd_rate ELSE 0 END) AS usd_millis
+         FROM notifications t
+         LEFT JOIN (
+           -- MIN(signed_date) with bare columns: SQLite takes price/usd_rate from
+           -- the matching row, so this is the FIRST paid event (the conversion),
+           -- not the sum of every later renewal.
+           SELECT p.original_transaction_id AS oid,
+                  MIN(p.signed_date) AS first_paid,
+                  p.price AS price, fx.usd_rate AS usd_rate
+           FROM notifications p LEFT JOIN fx_rates fx ON fx.currency = p.currency
+           WHERE p.price > 0
+             AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
+             AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
+                  OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
+                      AND p.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))
+           GROUP BY p.original_transaction_id
+         ) pay ON pay.oid = t.original_transaction_id AND pay.first_paid > t.signed_date
+         WHERE t.environment = 'Production'
+           AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+           AND t.expires_date IS NOT NULL
+           AND t.expires_date <= ? AND t.expires_date >= ?
+         GROUP BY t.bundle_id`
+      ).bind(now, since)
     );
   }
+
+  // Trials still running right now (state, not a window): how many are in
+  // flight, and how many of those have already turned off auto-renew — a
+  // leading indicator of where the conversion rate is heading. Deliberately
+  // NOT part of any denominator; these trials haven't resolved yet.
+  keys.push("inflight");
+  statements.push(
+    env.DB.prepare(
+      `SELECT t.bundle_id, COUNT(*) AS in_flight,
+              SUM(CASE WHEN EXISTS (
+                    SELECT 1 FROM notifications c
+                    WHERE c.original_transaction_id = t.original_transaction_id
+                      AND c.notification_type = 'DID_CHANGE_RENEWAL_STATUS'
+                      AND c.subtype = 'AUTO_RENEW_DISABLED'
+                      AND c.signed_date > t.signed_date
+                  ) THEN 1 ELSE 0 END) AS canceled
+       FROM notifications t
+       WHERE t.environment = 'Production'
+         AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
+         AND t.expires_date > ?
+       GROUP BY t.bundle_id`
+    ).bind(now)
+  );
 
   keys.push("feed");
   statements.push(
@@ -406,7 +452,8 @@ async function handleStats(env) {
   const windows = {};
   for (const key of Object.keys(WINDOWS)) {
     const agg = byKey[`agg:${key}`] || [];
-    const conv = byKey[`conv:${key}`] || [];
+    const trial = byKey[`trial:${key}`] || [];
+    const inflight = byKey.inflight || [];
     const apps = {};
     const app = (id) => {
       const k = id || "unknown";
@@ -415,6 +462,7 @@ async function handleStats(env) {
           name: appName(k),
           revenue_usd: 0, refunds_usd: 0, events: 0,
           new_subs: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
+          trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
           trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
           auto_renew_off: 0, expired: 0, renewal_failed: 0, unknown_fx: 0,
         };
@@ -454,16 +502,24 @@ async function handleStats(env) {
       }
     }
 
-    for (const r of conv) {
+    for (const r of trial) {
       const a = app(r.bundle_id);
-      a.trial_conversions += r.n;
+      a.trials_resolved += r.resolved;
+      a.trial_conversions += r.converted;
       a.trial_conversion_usd += (r.usd_millis || 0) / 1000;
+    }
+
+    for (const r of inflight) {
+      const a = app(r.bundle_id);
+      a.trials_in_flight += r.in_flight;
+      a.trials_canceled_in_flight += r.canceled;
     }
 
     const total = {
       name: "All Products",
       revenue_usd: 0, refunds_usd: 0, events: 0,
       new_subs: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
+      trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
       trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
       auto_renew_off: 0, expired: 0, renewal_failed: 0, unknown_fx: 0,
     };
@@ -528,7 +584,11 @@ TABLE fx_rates (currency TEXT PRIMARY KEY, usd_rate REAL)  -- static approximate
 - Apps: CD Wally (cdwally, one-time unlock), Countdowns (countdowns, one-time unlock + subscription), Overflight (overflight, subscription with free trial; launched 2026-07-20), HeyMuso (heymuso, unreleased).
 - Revenue events: DID_RENEW, ONE_TIME_CHARGE, and SUBSCRIBED/OFFER_REDEEMED with subtype INITIAL_BUY or RESUBSCRIBE — excluding rows where offer_discount_type = 'FREE_TRIAL' or price = 0.
 - Estimated USD revenue: SUM(price * usd_rate) / 1000.0 joining fx_rates on currency. All revenue figures are ESTIMATES of gross customer price (no Apple commission, static FX). Estimated proceeds ≈ 85% of gross (small business program).
-- Trial start: subtype = 'INITIAL_BUY' AND offer_discount_type = 'FREE_TRIAL'. Trial conversion: a later paid revenue event with the same original_transaction_id.
+- Trial start: subtype = 'INITIAL_BUY' AND offer_discount_type = 'FREE_TRIAL'. The trial's own expires_date is when it ends. Overflight's trial is 7 days.
+- Trial conversion: a later paid revenue event with the same original_transaction_id.
+- IMPORTANT — conversion rate must be measured over RESOLVED trials only: those whose expires_date has passed. A trial still inside its period has not had the chance to convert and must never count as a failure; report those separately as pending. Rate = converted / resolved, NOT converted / all starts (that understates it badly while an app is young).
+- Do not add cancellations to the denominator. Cancelling mid-trial (DID_CHANGE_RENEWAL_STATUS / AUTO_RENEW_DISABLED) is the *reason* a trial later fails to convert, not a separate outcome — the same person would be counted twice. Cancellation among in-flight trials is a useful leading indicator of where the rate is heading.
+- No settle grace is needed: Apple bills in advance, so DID_RENEW arrives ~8 hours BEFORE the trial's expires_date. Billing retry (DID_FAIL_TO_RENEW) is the rare exception where a verdict lands late.
 - History only goes back ~180 days before 2026-08 (Apple's notification-history limit); older CD Wally / Countdowns activity is not in the database.
 - Use SQLite date functions against ms epochs, e.g. signed_date >= unixepoch('now', '-7 days') * 1000. Current time comes from unixepoch('now').
 

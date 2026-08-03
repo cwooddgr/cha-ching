@@ -84,14 +84,16 @@
             <div id="hero-revenue" class="hero-number">$0.00</div>
             <div class="hero-caption">est. proceeds <span id="hero-proceeds" class="mono-strong">$0.00</span> · refunds <span id="hero-refunds" class="mono-red">−$0.00</span></div>
           </div>
-          <div class="hero-gauge" aria-hidden="true">
+          <div class="hero-gauge" id="gauge" aria-hidden="true">
             <svg viewBox="0 0 160 160">
               <circle cx="80" cy="80" r="70" class="gauge-track"/>
               <circle cx="80" cy="80" r="70" class="gauge-arc" id="gauge-arc"/>
               <circle cx="80" cy="80" r="58" class="ring r3" stroke-dasharray="4 10"/>
-              <text x="80" y="74" class="gauge-text" id="gauge-pct">—</text>
-              <text x="80" y="94" class="gauge-sub">TRIAL CONV</text>
+              <text x="80" y="72" class="gauge-text" id="gauge-pct">—</text>
+              <text x="80" y="90" class="gauge-sub">TRIAL CONV</text>
+              <text x="80" y="104" class="gauge-basis" id="gauge-basis"></text>
             </svg>
+            <div class="gauge-pending" id="gauge-pending"></div>
           </div>
         </div>
       </section>
