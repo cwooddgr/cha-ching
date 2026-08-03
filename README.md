@@ -50,12 +50,9 @@ Dashboard (same worker, static assets + /api/*):
 
 Apple's [Get Notification History](https://developer.apple.com/documentation/appstoreserverapi/get-notification-history) endpoint returns the past 180 days of notifications per app. The backfill script pages through it and uploads to `/api/backfill`. It needs an App Store Connect **In-App Purchase key** (`.p8`) — the key never leaves this machine.
 
+Credentials live in `.backfill.env` at the repo root (gitignored; a placeholder file is created on clone — fill in `APPLE_ISSUER_ID`, `APPLE_KEY_ID`, `APPLE_KEY_PATH`, `CHA_CHING_URL`, `DASHBOARD_SECRET`). Then:
+
 ```sh
-APPLE_ISSUER_ID=xxxxxxxx-xxxx-... \
-APPLE_KEY_ID=XXXXXXXXXX \
-APPLE_KEY_PATH=./AuthKey_XXXXXXXXXX.p8 \
-CHA_CHING_URL=https://cha-ching.<subdomain>.workers.dev \
-DASHBOARD_SECRET=... \
 npm run backfill                      # all four apps; or: npm run backfill co.dgrlabs.overflight
 ```
 

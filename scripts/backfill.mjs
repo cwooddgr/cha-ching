@@ -16,8 +16,17 @@
 // With no arguments, backfills all four apps.
 
 import { createPrivateKey } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { SignJWT } from "jose";
+
+// Load ./.backfill.env (KEY=VALUE lines, gitignored) so credentials don't
+// have to be passed on the command line. Real environment variables win.
+if (existsSync(".backfill.env")) {
+  for (const line of readFileSync(".backfill.env", "utf8").split("\n")) {
+    const match = line.match(/^\s*([A-Z_]+)\s*=\s*(.*?)\s*$/);
+    if (match && !(match[1] in process.env)) process.env[match[1]] = match[2];
+  }
+}
 
 const BUNDLE_IDS = [
   "co.dgrlabs.cdwally",
