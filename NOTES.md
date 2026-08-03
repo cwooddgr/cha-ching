@@ -85,11 +85,11 @@ v1 now tracks code redemptions separately.
 
 ---
 
-## Open item: Countdowns sends no notifications
+## RESOLVED: Countdowns sent no notifications
 
 > **Author:** Claude Code (coder)
 > **Date:** 2026-08-03
-> **Status:** proposed-by-agent (finding is verified; the fix is not yet authorized)
+> **Status:** decided-by-user (Charlie authorized the fix; applied and verified same day)
 
 The 180-day backfill returned zero Countdowns events. Confirmed the cause via
 `GET /v1/apps` — `subscriptionStatusUrl` per app:
@@ -103,11 +103,21 @@ The 180-day backfill returned zero Countdowns events. Confirmed the cause via
 | Flip Flap by DGR Labs | (none) |
 | HeyMuso | (none) |
 
-Countdowns sells a paid upgrade, so its purchases and refunds currently reach
-neither Slack nor D1. Bezelbub, Flip Flap and HeyMuso may legitimately not need
-one — worth confirming per app rather than assuming.
+Countdowns sells a paid upgrade, so its purchases and refunds were reaching
+neither Slack nor D1.
 
-This is fixable over the API (`PATCH /v1/apps/{id}`, setting
-`subscriptionStatusUrl` and `subscriptionStatusUrlVersion`) rather than through
-the App Store Connect UI, but it changes live production app configuration and
-needs Charlie's explicit go-ahead first.
+**Fixed 2026-08-03** via `PATCH /v1/apps/6758349780`, mirroring CD Wally's exact
+configuration — production and sandbox URLs both set to
+`https://cha-ching.charlie-wood.workers.dev`, both at V2. Confirmed by re-reading
+`GET /v1/apps` afterwards, not just by trusting the PATCH response.
+
+**This is forward-only.** Apple's notification history contains only notifications
+it actually attempted to send, so no amount of re-running `scripts/backfill.mjs`
+will recover Countdowns' past activity — it was never sent anywhere. Historical
+Countdowns revenue can only come from Sales Reports, which is one more argument
+for the v2 work above. Nothing will appear in D1 until the next real Countdowns
+purchase or refund.
+
+Bezelbub, Flip Flap and HeyMuso remain unset. That may be correct — Flip Flap is
+free and HeyMuso is unreleased — but it was not verified per app, so treat it as
+an open question rather than a decision.
