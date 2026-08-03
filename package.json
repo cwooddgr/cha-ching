@@ -1,0 +1,17 @@
+{
+  "name": "cha-ching",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "backfill": "node scripts/backfill.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0"
+  },
+  "devDependencies": {
+    "jose": "^6.2.8",
+    "wrangler": "^4.65.0"
+  }
+}
