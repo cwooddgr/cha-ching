@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<!--
+  Source of truth for the home-screen icon. Rendered through headless Chrome
+  rather than ImageMagick because the $ is set in Rajdhani (the console's
+  display face) and IM's built-in SVG renderer can't resolve webfonts.
+
+  Regenerate:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=1024,1024 --virtual-time-budget=6000 \
+      --screenshot=public/icon-1024.png "file://$PWD/tools/icon.html"
+    for s in 180 167 152 120; do
+      magick public/icon-1024.png -resize ${s}x${s} -strip \
+        -define png:color-type=2 public/apple-touch-icon-${s}.png
+    done
+
+  Keep the artwork inside ~80% of the frame: iOS masks it to a squircle and
+  clips the corners.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  html,body { margin:0; padding:0; background:#000; }
+  svg { display:block; }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="field" cx="50%" cy="42%" r="62%">
+      <stop offset="0%"   stop-color="#0e3f4d"/>
+      <stop offset="55%"  stop-color="#071620"/>
+      <stop offset="100%" stop-color="#05090e"/>
+    </radialGradient>
+    <pattern id="grid" width="42.6667" height="42.6667" patternUnits="userSpaceOnUse">
+      <path d="M42.6667 0 H0 V42.6667" fill="none" stroke="#35e0ff" stroke-width="1" opacity="0.09"/>
+    </pattern>
+    <filter id="glow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="softglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="10" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#field)"/>
+  <rect width="512" height="512" fill="url(#grid)"/>
+
+  <g fill="none" stroke="#35e0ff" stroke-linecap="butt">
+    <!-- outer hairline ring -->
+    <circle cx="256" cy="256" r="212" stroke-width="4" opacity="0.34"/>
+    <!-- primary segmented ring -->
+    <circle cx="256" cy="256" r="188" stroke-width="12" opacity="0.95"
+            stroke-dasharray="205 90" stroke-dashoffset="102" filter="url(#glow)"/>
+    <!-- inner tick ring -->
+    <circle cx="256" cy="256" r="152" stroke-width="4" opacity="0.45"
+            stroke-dasharray="7 17"/>
+  </g>
+
+  <text x="256" y="256" text-anchor="middle" dominant-baseline="central"
+        font-family="Rajdhani" font-weight="700" font-size="270"
+        fill="#35e0ff" filter="url(#softglow)">$</text>
+</svg>
+</body>
+</html>
