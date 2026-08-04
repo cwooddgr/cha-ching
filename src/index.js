@@ -280,6 +280,16 @@ function persistStatement(db, { notification, transaction, renewalInfo }) {
 // Auth
 // ---------------------------------------------------------------------------
 
+// The longest a cookie can actually live: Chrome (and the cookie draft spec)
+// silently clamp anything beyond 400 days down to 400. Safari's 7-day ITP cap
+// doesn't apply here — that one only bites cookies set from JS via
+// document.cookie, not HttpOnly ones we set from the server.
+const AUTH_MAX_AGE = 60 * 60 * 24 * 400;
+
+function authCookie(token) {
+  return `cc_auth=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${AUTH_MAX_AGE}`;
+}
+
 async function sha256Hex(text) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -310,7 +320,7 @@ async function handleLogin(request, env) {
     status: 200,
     headers: {
       "Content-Type": "application/json",
-      "Set-Cookie": `cc_auth=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=2592000`,
+      "Set-Cookie": authCookie(token),
     },
   });
 }
@@ -965,7 +975,15 @@ export default {
         return json({ error: "Unauthorized" }, 401);
       }
       if (pathname === "/api/stats" && request.method === "GET") {
-        return handleStats(env);
+        const resp = await handleStats(env);
+        // Slide the session forward every time the console loads. The window is
+        // capped at 400 days no matter what we ask for, so re-issuing on each
+        // load is the only way to make the code effectively permanent: it's
+        // asked for again only after 400 days of never opening the dashboard.
+        // Riding on /stats rather than /pulse keeps the seconds-interval poll
+        // from carrying a Set-Cookie on every response.
+        resp.headers.append("Set-Cookie", authCookie(await sha256Hex(env.DASHBOARD_SECRET)));
+        return resp;
       }
       // Cheap watermark for the dashboard's live poll: a few bytes and one
       // indexed lookup, so the client can check "has anything landed?" often
