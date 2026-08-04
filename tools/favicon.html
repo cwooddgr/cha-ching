@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<!--
+  Tab-favicon variant of the home-screen icon. Same mark, but the grid field
+  and the dashed tick ring are dropped and everything is heavier — at 16px
+  those details collapse into noise and the "$" stops reading.
+
+  Regenerate:
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=512,512 --virtual-time-budget=6000 \
+      --screenshot=/tmp/favicon-512.png "file://$PWD/tools/favicon.html"
+    for s in 16 32 48 180; do
+      magick /tmp/favicon-512.png -resize ${s}x${s} -strip /tmp/favicon-${s}.png
+    done
+    magick /tmp/favicon-16.png /tmp/favicon-32.png /tmp/favicon-48.png \
+      public/favicon.ico
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  html,body { margin:0; padding:0; background:#000; }
+  svg { display:block; }
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="field" cx="50%" cy="42%" r="62%">
+      <stop offset="0%"   stop-color="#0e3f4d"/>
+      <stop offset="60%"  stop-color="#071620"/>
+      <stop offset="100%" stop-color="#05090e"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#field)"/>
+
+  <!-- single segmented ring, heavier than the app icon's so it survives 16px -->
+  <circle cx="256" cy="256" r="206" fill="none" stroke="#35e0ff" stroke-width="30"
+          stroke-dasharray="228 96" stroke-dashoffset="114"/>
+
+  <text x="256" y="256" text-anchor="middle" dominant-baseline="central"
+        font-family="Rajdhani" font-weight="700" font-size="360"
+        fill="#35e0ff">$</text>
+</svg>
+</body>
+</html>

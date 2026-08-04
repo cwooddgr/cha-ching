@@ -9,7 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%2335e0ff' stroke-width='2'/><circle cx='16' cy='16' r='5' fill='%2335e0ff'/></svg>">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
+<link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48">
 <!-- iOS home-screen bookmark. PNG only — Safari ignores SVG here. iOS picks the
      closest size up, so 180 doubles as the default for anything unlisted. -->
 <link rel="apple-touch-icon" href="/apple-touch-icon-180.png">
@@ -18,6 +20,15 @@
 <link rel="apple-touch-icon" sizes="152x152" href="/apple-touch-icon-152.png">
 <link rel="apple-touch-icon" sizes="120x120" href="/apple-touch-icon-120.png">
 <meta name="apple-mobile-web-app-title" content="Cha-Ching">
+<!-- Launch the saved bookmark without Safari's chrome. display:standalone in the
+     manifest is what current iOS honours; the apple-* pair is the fallback for
+     when the manifest can't be fetched. Opaque "black" status bar rather than
+     black-translucent so the masthead isn't shoved under the clock. -->
+<link rel="manifest" href="/manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#05090e">
 </head>
 <body>
 
