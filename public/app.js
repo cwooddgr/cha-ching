@@ -87,8 +87,18 @@
   function showAuth(message) {
     $("#console").classList.add("hidden");
     $("#auth").classList.remove("hidden");
+    document.body.classList.add("booted"); // the auth gate needs no boot reel
     if (message) $("#auth-error").textContent = message;
     $("#auth-secret").focus();
+  }
+
+  // Hand the reveal to the fx layer (boot sequence), with a fallback so the
+  // console still appears if fx.js failed to load or never flips the class.
+  function revealConsole() {
+    $("#auth").classList.add("hidden");
+    $("#console").classList.remove("hidden");
+    if (window.CCFX) window.CCFX.boot();
+    setTimeout(() => document.body.classList.add("booted"), 3000);
   }
 
   $("#auth-form").addEventListener("submit", async (e) => {
@@ -105,8 +115,7 @@
         $("#auth-error").textContent = "ACCESS DENIED";
         return;
       }
-      $("#auth").classList.add("hidden");
-      $("#console").classList.remove("hidden");
+      revealConsole();
       loadStats();
       startPulse();
     } catch {
@@ -182,6 +191,30 @@
   const saved = storedWindow();
   if (saved) selectWindow(saved, false);
 
+  // The hero figure counts up to its new value instead of snapping — both on
+  // window changes and when fresh revenue lands.
+  let heroShown = null;
+  let heroRaf = null;
+  function animateHero(target) {
+    const node = $("#hero-revenue");
+    const from = heroShown;
+    heroShown = target;
+    if (from == null || from === target || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      node.textContent = usd(target);
+      return;
+    }
+    cancelAnimationFrame(heroRaf);
+    const t0 = performance.now();
+    const DUR = 800;
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / DUR);
+      const ease = 1 - Math.pow(1 - k, 3);
+      node.textContent = usd(from + (target - from) * ease);
+      if (k < 1) heroRaf = requestAnimationFrame(step);
+    };
+    heroRaf = requestAnimationFrame(step);
+  }
+
   function render() {
     if (!stats) return;
     const win = stats.windows[currentWindow];
@@ -189,7 +222,7 @@
     const t = win.total;
 
     // hero
-    $("#hero-revenue").textContent = usd(t.revenue_usd);
+    animateHero(t.revenue_usd);
     $("#hero-proceeds").textContent = usd(t.revenue_usd * 0.85);
     $("#hero-refunds").textContent = "−" + usd(t.refunds_usd);
 
@@ -287,6 +320,7 @@
 
     // feed
     const feed = stats.feed || [];
+    const freshRevenue = []; // fresh production money — the fx layer celebrates these
     $("#feed").innerHTML = feed
       .map((ev) => {
         let cls = "info";
@@ -306,6 +340,9 @@
         // Flash rows that weren't on screen a moment ago — but never on the
         // first paint, or the whole feed lights up on load.
         const fresh = seenEvents !== null && !seenEvents.has(ev.notification_uuid);
+        if (fresh && !sandbox && !isTrial && REVENUE_TYPES.has(ev.notification_type) && ev.price > 0) {
+          freshRevenue.push({ price: ev.price / 1000, currency: ev.currency || "" });
+        }
         return `
         <div class="feed-row${fresh ? " fresh" : ""}">
           <span class="feed-time">${utcStamp(ev.signed_date)}</span>
@@ -317,6 +354,14 @@
       .join("");
     seenEvents = new Set(feed.map((ev) => ev.notification_uuid));
     $("#feed-note").textContent = `LAST ${feed.length}`;
+
+    if (freshRevenue.length) {
+      const label =
+        freshRevenue.length === 1
+          ? `+ ${freshRevenue[0].price.toFixed(2)} ${freshRevenue[0].currency}`.trim()
+          : `${freshRevenue.length} REVENUE EVENTS`;
+      document.dispatchEvent(new CustomEvent("cc:chaching", { detail: { label } }));
+    }
 
     // meta
     const m = stats.meta;
@@ -529,7 +574,7 @@
         return;
       }
       stats = await resp.json();
-      $("#console").classList.remove("hidden");
+      revealConsole();
       render();
       refreshTimer = setTimeout(loadStats, FULL_REFRESH_MS);
       startPulse();

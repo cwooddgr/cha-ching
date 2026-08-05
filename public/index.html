@@ -32,12 +32,24 @@
 </head>
 <body>
 
-<div id="scanline" aria-hidden="true"></div>
 <div id="grid-bg" aria-hidden="true"></div>
+<canvas id="particles" aria-hidden="true"></canvas>
+<div id="vignette" aria-hidden="true"></div>
+<div id="noise" aria-hidden="true"></div>
+<div id="scanline" aria-hidden="true"></div>
+<div id="flare-layer" aria-hidden="true"><div id="flare-ambient"></div></div>
+<div id="reticle" aria-hidden="true">
+  <div class="ret-h"></div>
+  <div class="ret-v"></div>
+  <div class="ret-read"></div>
+</div>
+<div class="rail rail-left" aria-hidden="true"><span class="rail-cursor"></span><span class="rail-hex" id="rail-hex-l"></span></div>
+<div class="rail rail-right" aria-hidden="true"><span class="rail-cursor"></span><span class="rail-hex" id="rail-hex-r"></span></div>
 
 <!-- ═══ AUTH GATE ═══ -->
 <div id="auth" class="auth hidden">
   <div class="auth-panel bracket">
+    <div class="auth-scan" aria-hidden="true"></div>
     <div class="auth-glyph" aria-hidden="true">
       <svg viewBox="0 0 120 120">
         <circle cx="60" cy="60" r="54" class="ring r1"/>
@@ -70,11 +82,12 @@
         </svg>
       </div>
       <div>
-        <div class="wordmark">CHA-CHING</div>
+        <div class="wordmark" data-text="CHA-CHING">CHA-CHING</div>
         <div class="tagline">APP STORE REVENUE TELEMETRY · DGR LABS</div>
       </div>
     </div>
     <div class="masthead-right">
+      <svg class="ekg" viewBox="0 0 120 28" aria-hidden="true"><polyline points="0,14 20,14 26,14 30,4 36,24 40,14 60,14 66,14 70,8 74,20 78,14 120,14"/></svg>
       <div class="readout"><span class="readout-label">LINK</span><span id="link-dot" class="dot dot-live"></span><span id="link-state">ONLINE</span></div>
       <div class="readout"><span class="readout-label">DATASET</span><span id="meta-events">—</span></div>
       <div class="readout"><span class="readout-label">UTC</span><span id="clock">--:--:--</span></div>
@@ -97,14 +110,18 @@
     <div class="col-metrics">
 
       <section class="panel bracket hero" id="hero-panel">
+        <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ GROSS REVENUE · EST USD</span><span class="panel-note">CUSTOMER PRICE · STATIC FX</span></div>
         <div class="hero-row">
+          <div class="hero-watermark" aria-hidden="true">$</div>
           <div class="hero-figure">
             <div id="hero-revenue" class="hero-number">$0.00</div>
             <div class="hero-caption">est. proceeds <span id="hero-proceeds" class="mono-strong">$0.00</span> · refunds <span id="hero-refunds" class="mono-red">−$0.00</span></div>
           </div>
           <div class="hero-gauge" id="gauge" aria-hidden="true">
+            <div class="gauge-sweep"></div>
             <svg viewBox="0 0 160 160">
+              <circle cx="80" cy="80" r="76" class="ring r3" stroke-dasharray="2 6"/>
               <circle cx="80" cy="80" r="70" class="gauge-track"/>
               <circle cx="80" cy="80" r="70" class="gauge-arc" id="gauge-arc"/>
               <circle cx="80" cy="80" r="58" class="ring r3" stroke-dasharray="4 10"/>
@@ -119,16 +136,19 @@
       </section>
 
       <section class="panel bracket">
+        <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ SIGNALS</span></div>
         <div class="tiles" id="tiles"></div>
       </section>
 
       <section class="panel bracket">
+        <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ PER-PRODUCT BREAKDOWN</span></div>
         <div id="apps" class="apps"></div>
       </section>
 
       <section class="panel bracket">
+        <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ EVENT STREAM</span><span class="panel-note" id="feed-note"></span></div>
         <div id="feed" class="feed"></div>
       </section>
@@ -138,6 +158,7 @@
     <!-- right column: chat -->
     <div class="col-chat">
       <section class="panel bracket chat-panel">
+        <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ ANALYST CONSOLE</span><span class="panel-note">CLAUDE · LIVE QUERY</span></div>
         <div id="chat-log" class="chat-log">
           <div class="chat-hello">
@@ -161,6 +182,7 @@
 
 </main>
 
+<script src="/fx.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>
