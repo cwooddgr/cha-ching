@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════════
-   CHA-CHING · FUI revenue telemetry console
+   REV-9000 · FUI revenue telemetry console (the artist formerly known as Cha-Ching)
    Palette: near-black blue field, luminous cyan instrumentation,
    amber caution, red refund. Data type: IBM Plex Mono. Display: Rajdhani.
    ═══════════════════════════════════════════════════════════════════════ */
@@ -286,11 +286,13 @@ body {
 .mono-red { color: var(--red); }
 .hero-gauge { position: relative; }
 .hero-gauge svg { width: 150px; height: 150px; display: block; position: relative; }
-/* Radar arm circling the conversion dial. */
+/* Radar arm circling the conversion dial. Bright leading edge at 0°/360°
+   with the afterglow decaying behind it (counterclockwise), so the clockwise
+   spin reads as beam-then-trail. */
 .gauge-sweep {
   position: absolute; top: 0; left: 0; width: 150px; height: 150px;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(53, 224, 255, 0.22), transparent 70deg, transparent);
+  background: conic-gradient(from 0deg, transparent, transparent 275deg, rgba(53, 224, 255, 0.26) 360deg);
   animation: spin 5s linear infinite;
   mix-blend-mode: screen; pointer-events: none;
 }
@@ -774,4 +776,29 @@ body {
 @keyframes auth-scan {
   from { top: -12%; }
   to   { top: 100%; }
+}
+
+/* ── the REV-9000 eye ───────────────────────────────────────────────── */
+/* The only red light on the bridge. Breathes at rest; flares when money
+   lands. It is watching the event stream. It is always watching. */
+
+.hal {
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  background: radial-gradient(circle at 50% 38%,
+    rgba(255, 224, 170, 0.95) 0 7%,
+    rgba(255, 92, 60, 0.95) 20%,
+    rgba(168, 18, 8, 0.95) 48%,
+    rgba(28, 3, 2, 1) 80%);
+  border: 1px solid rgba(255, 120, 100, 0.3);
+  box-shadow: 0 0 12px rgba(255, 59, 48, 0.5), inset 0 0 5px rgba(0, 0, 0, 0.7);
+  animation: hal-breathe 5.5s ease-in-out infinite;
+}
+@keyframes hal-breathe {
+  50% { box-shadow: 0 0 5px rgba(255, 59, 48, 0.3), inset 0 0 5px rgba(0, 0, 0, 0.7); filter: brightness(0.8); }
+}
+.hal.alert { animation: hal-alert 1.8s ease; }
+@keyframes hal-alert {
+  0%   { filter: brightness(1); box-shadow: 0 0 12px rgba(255, 59, 48, 0.5); }
+  10%  { filter: brightness(2.1); box-shadow: 0 0 30px rgba(255, 59, 48, 0.95), 0 0 60px rgba(255, 59, 48, 0.4); }
+  100% { filter: brightness(1); box-shadow: 0 0 12px rgba(255, 59, 48, 0.5); }
 }

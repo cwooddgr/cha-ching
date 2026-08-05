@@ -1,4 +1,4 @@
-// CHA-CHING console — auth, stats rendering, event feed, analyst chat.
+// REV-9000 console — auth, stats rendering, event feed, analyst chat.
 
 (() => {
   "use strict";

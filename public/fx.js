@@ -1,4 +1,4 @@
-// CHA-CHING cinematic layer — boot sequence, particles, lens flares,
+// REV-9000 cinematic layer — boot sequence, particles, lens flares,
 // targeting reticle, rail readouts. Pure decoration: app.js never depends on
 // this file existing; everything here is safe to fail.
 
@@ -13,7 +13,7 @@
   // runs on every reload of a dashboard people actually use.
 
   const BOOT_LINES = [
-    "CHA-CHING TELEMETRY OS · v2.6",
+    "REV-9000 TELEMETRY CORE · v9.0",
     "▸ establishing secure uplink ........... OK",
     "▸ decrypting revenue stream ............ OK",
     "▸ calibrating instrumentation .......... OK",
@@ -92,6 +92,12 @@
       hero.classList.remove("flash");
       void hero.offsetWidth; // restart the animation
       hero.classList.add("flash");
+    }
+    const hal = document.getElementById("hal");
+    if (hal) {
+      hal.classList.remove("alert");
+      void hal.offsetWidth;
+      hal.classList.add("alert");
     }
     if (reduced) return;
     const stamp = document.createElement("div");

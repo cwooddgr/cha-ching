@@ -1,6 +1,6 @@
 {
-  "name": "Cha-Ching — Revenue Telemetry",
-  "short_name": "Cha-Ching",
+  "name": "REV-9000 — Revenue Telemetry",
+  "short_name": "REV-9000",
   "description": "DGR Labs App Store revenue telemetry console.",
   "start_url": "/",
   "scope": "/",
