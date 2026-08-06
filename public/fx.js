@@ -153,6 +153,32 @@
     if (soundOn) chaChingSound(); // the preview doubles as confirmation
   });
 
+  // ── screen quake ──────────────────────────────────────────────────────
+  // The stamp weighs a metric ton, so the console jolts when it lands.
+  // WAAPI rather than a CSS class: `animation` is one property, so a class
+  // would knock out the background layers' own animations (noise-jitter,
+  // grid-pan, scan) for the duration. composite:"add" also keeps any
+  // existing transforms intact. Everything but the stamp shakes — shaking
+  // <body> would shake the stamp along with the surface it just hit.
+
+  function quake() {
+    if (reduced) return;
+    const frames = [
+      { transform: "translate(0, 0)", offset: 0 },
+      { transform: "translate(3px, 12px)", offset: 0.1 },
+      { transform: "translate(-4px, -7px)", offset: 0.26 },
+      { transform: "translate(3px, 5px)", offset: 0.44 },
+      { transform: "translate(-2px, -3px)", offset: 0.62 },
+      { transform: "translate(1px, 1px)", offset: 0.8 },
+      { transform: "translate(0, 0)", offset: 1 },
+    ];
+    document.querySelectorAll("body > *:not(.chaching-stamp)").forEach((el) => {
+      try {
+        el.animate(frames, { duration: 450, easing: "ease-out", composite: "add" });
+      } catch { /* old browser — the moment survives without the shake */ }
+    });
+  }
+
   // ── cha-ching moment ──────────────────────────────────────────────────
   // app.js dispatches cc:chaching when fresh production revenue lands.
 
@@ -178,6 +204,8 @@
     document.body.appendChild(stamp);
     stamp.addEventListener("animationend", () => stamp.remove());
     setTimeout(() => stamp.remove(), 3000);
+    // stamp-in hits full size at 10% of its 2s run — quake on impact.
+    setTimeout(quake, 200);
   });
 
   // ── particle field ────────────────────────────────────────────────────
@@ -323,5 +351,5 @@
     setInterval(tick, 1700);
   }
 
-  window.CCFX = { boot, sweepFlare };
+  window.CCFX = { boot, sweepFlare, quake };
 })();
