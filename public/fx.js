@@ -82,6 +82,77 @@
   }
   scheduleGlint();
 
+  // ── cash register ─────────────────────────────────────────────────────
+  // A real one: public-domain recording from Wikimedia Commons
+  // ("File:Cash register.ogg"), trimmed/normalized, decoded into a buffer so
+  // playback lands sample-accurate with the stamp. Browsers gate audio behind
+  // a user gesture, so the context unlocks on the first interaction; the SND
+  // toggle in the masthead mutes it (persisted).
+
+  const SOUND_KEY = "cc_sound";
+  let soundOn = true;
+  try { soundOn = (localStorage.getItem(SOUND_KEY) ?? "on") === "on"; } catch { /* default on */ }
+
+  let audioCtx = null;
+  function ensureCtx() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    if (!audioCtx) audioCtx = new AC();
+    if (audioCtx.state === "suspended") audioCtx.resume();
+    return audioCtx;
+  }
+  ["pointerdown", "keydown"].forEach((t) =>
+    addEventListener(t, () => {
+      if (!soundOn) return;
+      ensureCtx();
+      loadChaChing(); // decode ahead of time so the first hit isn't late
+    }, { once: true, capture: true }));
+
+  let chaChingBuf = null;
+  let chaChingFetch = null;
+  function loadChaChing() {
+    if (!audioCtx) return Promise.resolve();
+    if (chaChingFetch) return chaChingFetch;
+    chaChingFetch = fetch("/chaching.mp3")
+      .then((r) => r.arrayBuffer())
+      .then((b) => new Promise((res, rej) => audioCtx.decodeAudioData(b, res, rej)))
+      .then((buf) => { chaChingBuf = buf; })
+      .catch(() => { chaChingFetch = null; }); // transient — retry on next play
+    return chaChingFetch;
+  }
+
+  function chaChingSound() {
+    if (!soundOn) return;
+    const ctx = ensureCtx();
+    if (!ctx || ctx.state !== "running") return;
+    const play = () => {
+      if (!chaChingBuf) return;
+      const src = ctx.createBufferSource();
+      src.buffer = chaChingBuf;
+      const g = ctx.createGain();
+      g.gain.value = 0.9;
+      src.connect(g); g.connect(ctx.destination);
+      src.start();
+    };
+    if (chaChingBuf) play();
+    else loadChaChing().then(play);
+  }
+
+  const sndBtn = document.getElementById("snd");
+  const sndState = document.getElementById("snd-state");
+  function paintSnd() {
+    if (!sndBtn) return;
+    sndBtn.classList.toggle("off", !soundOn);
+    if (sndState) sndState.textContent = soundOn ? "ON" : "OFF";
+  }
+  paintSnd();
+  if (sndBtn) sndBtn.addEventListener("click", () => {
+    soundOn = !soundOn;
+    try { localStorage.setItem(SOUND_KEY, soundOn ? "on" : "off"); } catch { /* session-only */ }
+    paintSnd();
+    if (soundOn) chaChingSound(); // the preview doubles as confirmation
+  });
+
   // ── cha-ching moment ──────────────────────────────────────────────────
   // app.js dispatches cc:chaching when fresh production revenue lands.
 

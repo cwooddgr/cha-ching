@@ -802,3 +802,16 @@ body {
   10%  { filter: brightness(2.1); box-shadow: 0 0 30px rgba(255, 59, 48, 0.95), 0 0 60px rgba(255, 59, 48, 0.4); }
   100% { filter: brightness(1); box-shadow: 0 0 12px rgba(255, 59, 48, 0.5); }
 }
+
+/* ── SND toggle ─────────────────────────────────────────────────────── */
+
+.snd {
+  background: transparent; border: 1px solid var(--panel-edge);
+  color: var(--ink-2); font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.2em; padding: 4px 10px; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.snd b { color: var(--cyan); font-weight: 600; }
+.snd:hover { border-color: var(--cyan); color: var(--ink); }
+.snd.off b { color: var(--ink-3); }
+.snd.off { color: var(--ink-3); }
