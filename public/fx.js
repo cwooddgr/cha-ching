@@ -198,13 +198,15 @@
 
   function quake() {
     if (reduced) return;
+    // Peak displacement almost immediately — the first frame is the impact;
+    // everything after is the ring-down.
     const frames = [
       { transform: "translate(0, 0)", offset: 0 },
-      { transform: "translate(3px, 12px)", offset: 0.1 },
-      { transform: "translate(-4px, -7px)", offset: 0.26 },
-      { transform: "translate(3px, 5px)", offset: 0.44 },
-      { transform: "translate(-2px, -3px)", offset: 0.62 },
-      { transform: "translate(1px, 1px)", offset: 0.8 },
+      { transform: "translate(3px, 12px)", offset: 0.06 },
+      { transform: "translate(-4px, -7px)", offset: 0.2 },
+      { transform: "translate(3px, 5px)", offset: 0.38 },
+      { transform: "translate(-2px, -3px)", offset: 0.58 },
+      { transform: "translate(1px, 1px)", offset: 0.78 },
       { transform: "translate(0, 0)", offset: 1 },
     ];
     document.querySelectorAll("body > *:not(.chaching-stamp)").forEach((el) => {
@@ -213,6 +215,11 @@
       } catch { /* old browser — the moment survives without the shake */ }
     });
   }
+
+  // stamp-in's keyframe says the stamp lands at 200ms, but its ease-out
+  // curve front-loads the motion — it *reads* as landed around 150ms. Fire
+  // just before that so the quake's near-immediate peak hits in sync.
+  const STAMP_LAND_MS = 140;
 
   // ── cha-ching moment ──────────────────────────────────────────────────
   // app.js dispatches cc:chaching when fresh production revenue lands.
@@ -240,8 +247,7 @@
     document.body.appendChild(stamp);
     stamp.addEventListener("animationend", () => stamp.remove());
     setTimeout(() => stamp.remove(), 3000);
-    // stamp-in hits full size at 10% of its 2s run — quake on impact.
-    setTimeout(quake, 200);
+    setTimeout(quake, STAMP_LAND_MS);
   });
 
   // ── red alert ─────────────────────────────────────────────────────────
@@ -270,7 +276,7 @@
     stamp.addEventListener("animationend", () => stamp.remove());
     setTimeout(() => stamp.remove(), 3000);
     // Same impact beat as the cha-ching — bad news is heavy too.
-    setTimeout(quake, 200);
+    setTimeout(quake, STAMP_LAND_MS);
   });
 
   // ── decrypting numerals ───────────────────────────────────────────────
