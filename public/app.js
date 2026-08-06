@@ -366,9 +366,17 @@
     // meta
     const m = stats.meta;
     $("#meta-events").textContent = `${num(m.total_events)} EVT`;
-    $("#horizon").textContent = m.oldest
-      ? `HORIZON ${utcDate(m.oldest)} → ${utcDate(m.newest)} · WINDOW ${currentWindow.toUpperCase()}`
-      : "AWAITING DATA";
+    // The horizon reflects what's actually on screen: sliding windows span
+    // (now - span) → now, matching the server's cutoff; only ALL spans the
+    // dataset itself. For 24H a bare date is useless, so include the time.
+    const SPANS = { "24h": 86400000, "7d": 7 * 86400000, "30d": 30 * 86400000 };
+    const span = SPANS[currentWindow];
+    const winLabel = `WINDOW ${currentWindow.toUpperCase()}`;
+    $("#horizon").textContent = !m.oldest
+      ? "AWAITING DATA"
+      : span
+        ? `HORIZON ${currentWindow === "24h" ? utcStamp(stats.generated_at - span) : utcDate(stats.generated_at - span)} → NOW · ${winLabel}`
+        : `HORIZON ${utcDate(m.oldest)} → ${utcDate(m.newest)} · ${winLabel}`;
     $("#foot-updated").textContent = `REFRESHED ${utcStamp(stats.generated_at)}`;
   }
 
