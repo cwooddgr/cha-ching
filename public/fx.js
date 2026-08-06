@@ -138,6 +138,41 @@
     else loadChaChing().then(play);
   }
 
+  // ── alarm klaxon ──────────────────────────────────────────────────────
+  // Synthesized, no asset: three rising sawtooth whoops through a lowpass —
+  // the classic sci-fi "something is wrong" sweep. Deliberately quieter than
+  // the register; bad news shouldn't be louder than good news.
+
+  function alarmSound() {
+    if (!soundOn) return;
+    const ctx = ensureCtx();
+    if (!ctx || ctx.state !== "running") return;
+    const t0 = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.value = 0.18;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.value = 2200;
+    master.connect(lp);
+    lp.connect(ctx.destination);
+    for (let i = 0; i < 3; i++) {
+      const s = t0 + i * 0.42;
+      const osc = ctx.createOscillator();
+      osc.type = "sawtooth";
+      osc.frequency.setValueAtTime(290, s);
+      osc.frequency.exponentialRampToValueAtTime(660, s + 0.32);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, s);
+      g.gain.linearRampToValueAtTime(1, s + 0.03);
+      g.gain.setValueAtTime(1, s + 0.3);
+      g.gain.linearRampToValueAtTime(0, s + 0.4);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(s);
+      osc.stop(s + 0.42);
+    }
+  }
+
   const sndBtn = document.getElementById("snd");
   const sndState = document.getElementById("snd-state");
   function paintSnd() {
@@ -183,6 +218,7 @@
   // app.js dispatches cc:chaching when fresh production revenue lands.
 
   document.addEventListener("cc:chaching", (e) => {
+    chaChingSound();
     sweepFlare(1);
     const hero = document.getElementById("hero-panel");
     if (hero) {
@@ -207,6 +243,76 @@
     // stamp-in hits full size at 10% of its 2s run — quake on impact.
     setTimeout(quake, 200);
   });
+
+  // ── red alert ─────────────────────────────────────────────────────────
+  // app.js dispatches cc:alert when a fresh production refund lands. The
+  // dark mirror of the cha-ching: red stamp, klaxon-light wash, alarm.
+
+  document.addEventListener("cc:alert", (e) => {
+    alarmSound();
+    const hal = document.getElementById("hal");
+    if (hal) {
+      hal.classList.remove("alert");
+      void hal.offsetWidth;
+      hal.classList.add("alert");
+    }
+    if (reduced) return;
+    const wash = document.createElement("div");
+    wash.className = "alert-wash";
+    document.body.appendChild(wash);
+    wash.addEventListener("animationend", () => wash.remove());
+    setTimeout(() => wash.remove(), 4000);
+    const stamp = document.createElement("div");
+    stamp.className = "chaching-stamp alarm";
+    const label = (e.detail && e.detail.label) || "REVENUE ANOMALY";
+    stamp.innerHTML = `<span class="stamp-main">REFUND</span><span class="stamp-sub">${label}</span>`;
+    document.body.appendChild(stamp);
+    stamp.addEventListener("animationend", () => stamp.remove());
+    setTimeout(() => stamp.remove(), 3000);
+    // Same impact beat as the cha-ching — bad news is heavy too.
+    setTimeout(quake, 200);
+  });
+
+  // ── decrypting numerals ───────────────────────────────────────────────
+  // The hero figure never just changes — it re-decrypts: digits scramble
+  // and lock in left to right. A MutationObserver keeps this purely
+  // decorative; app.js writes plain text and never knows. `expected` tags
+  // our own writes so the observer doesn't chase its own tail.
+
+  const heroNum = document.getElementById("hero-revenue");
+  if (heroNum && !reduced) {
+    let settled = heroNum.textContent;
+    let expected = null;
+    let raf = 0;
+    const write = (txt) => { expected = txt; heroNum.textContent = txt; };
+
+    function decodeTo(target) {
+      cancelAnimationFrame(raf);
+      const start = performance.now();
+      const DUR = 650;
+      const step = (now) => {
+        const t = Math.min(1, (now - start) / DUR);
+        const lock = Math.floor(t * target.length);
+        let out = "";
+        for (let i = 0; i < target.length; i++) {
+          const ch = target[i];
+          out += i < lock || !/[0-9]/.test(ch)
+            ? ch
+            : String(Math.floor(Math.random() * 10));
+        }
+        write(t >= 1 ? target : out);
+        if (t < 1) raf = requestAnimationFrame(step);
+      };
+      raf = requestAnimationFrame(step);
+    }
+
+    new MutationObserver(() => {
+      const target = heroNum.textContent;
+      if (target === expected || target === settled) return;
+      settled = target;
+      decodeTo(target);
+    }).observe(heroNum, { childList: true, characterData: true, subtree: true });
+  }
 
   // ── particle field ────────────────────────────────────────────────────
   // Slow-drifting motes plus the occasional horizontal data streak.

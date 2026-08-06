@@ -321,6 +321,7 @@
     // feed
     const feed = stats.feed || [];
     const freshRevenue = []; // fresh production money — the fx layer celebrates these
+    const freshRefunds = []; // fresh production refunds — the fx layer sounds the alarm
     $("#feed").innerHTML = feed
       .map((ev) => {
         let cls = "info";
@@ -343,6 +344,9 @@
         if (fresh && !sandbox && !isTrial && REVENUE_TYPES.has(ev.notification_type) && ev.price > 0) {
           freshRevenue.push({ price: ev.price / 1000, currency: ev.currency || "" });
         }
+        if (fresh && !sandbox && ev.notification_type === "REFUND") {
+          freshRefunds.push({ price: (ev.price || 0) / 1000, currency: ev.currency || "" });
+        }
         return `
         <div class="feed-row${fresh ? " fresh" : ""}">
           <span class="feed-time">${utcStamp(ev.signed_date)}</span>
@@ -361,6 +365,18 @@
           ? `+ ${freshRevenue[0].price.toFixed(2)} ${freshRevenue[0].currency}`.trim()
           : `${freshRevenue.length} REVENUE EVENTS`;
       document.dispatchEvent(new CustomEvent("cc:chaching", { detail: { label } }));
+    }
+    if (freshRefunds.length) {
+      const label =
+        freshRefunds.length === 1 && freshRefunds[0].price > 0
+          ? `− ${freshRefunds[0].price.toFixed(2)} ${freshRefunds[0].currency}`.trim()
+          : `${freshRefunds.length} REFUND EVENT${freshRefunds.length > 1 ? "S" : ""}`;
+      // If a cha-ching fired in the same refresh, hold the alarm until the
+      // celebration stamp has cleared — the two moments shouldn't overlap.
+      setTimeout(
+        () => document.dispatchEvent(new CustomEvent("cc:alert", { detail: { label } })),
+        freshRevenue.length ? 2600 : 0,
+      );
     }
 
     // meta

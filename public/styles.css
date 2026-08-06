@@ -712,6 +712,33 @@ body {
 .chaching-stamp .stamp-sub {
   font-family: var(--mono); font-size: 13px; letter-spacing: 0.35em;
 }
+/* Red-alert variant — same slam, opposite mood. */
+.chaching-stamp.alarm {
+  border-color: var(--red);
+  color: var(--red);
+  box-shadow: 0 0 70px rgba(255, 97, 97, 0.4), inset 0 0 34px rgba(255, 97, 97, 0.14);
+}
+.chaching-stamp.alarm .stamp-main { text-shadow: 0 0 40px rgba(255, 97, 97, 0.85); }
+
+/* Klaxon lights: red pulses bleeding in from the top and bottom edges. */
+.alert-wash {
+  position: fixed; inset: 0; z-index: 60;
+  pointer-events: none; mix-blend-mode: screen;
+  background:
+    radial-gradient(ellipse at 50% -20%, rgba(255, 60, 50, 0.3), transparent 60%),
+    radial-gradient(ellipse at 50% 120%, rgba(255, 60, 50, 0.3), transparent 60%);
+  animation: alert-wash 2.6s ease-out forwards;
+}
+@keyframes alert-wash {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  22%  { opacity: 0.3; }
+  36%  { opacity: 1; }
+  50%  { opacity: 0.3; }
+  62%  { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
 @keyframes stamp-in {
   0%   { opacity: 0; transform: translate(-50%, -50%) rotate(-7deg) scale(2.4); }
   10%  { opacity: 1; transform: translate(-50%, -50%) rotate(-7deg) scale(1); }
