@@ -6,11 +6,19 @@ A Cloudflare Worker that receives [App Store Server Notifications V2](https://de
 Apple App Store ──(HTTPS POST, signed JWT)──> Cloudflare Worker ──┬──> D1 (every notification)
                                                                   └──> Slack #cha-ching (curated)
 
-Dashboard (same worker, static assets + /api/*):
+Dashboard (same worker, https://cha-ching.dgrlabs.co — behind Cloudflare Access):
   /            FUI dashboard — revenue, subscribers, trials, refunds (24h/7d/30d/all, per app)
   /api/stats   aggregates from D1
   /api/chat    Claude (claude-opus-5) with a read-only SQL tool over D1, streamed via SSE
 ```
+
+**Two hostnames, strictly split** (since 2026-08-07): Apple's notification POSTs
+and the backfill script target `cha-ching.charlie-wood.workers.dev`; humans use
+`https://cha-ching.dgrlabs.co`, which sits behind Cloudflare Access (one-time
+PIN, Zero Trust org `dgrlabs.cloudflareaccess.com` — same as house.dgrlabs.co).
+The worker refuses dashboard/data routes on workers.dev (404) so Access can't
+be bypassed, and fails closed (503) on the custom hostname if `ACCESS_ENABLED`
+isn't `"1"`. The passphrase → cookie auth below still applies on top of Access.
 
 ## Components
 
@@ -20,7 +28,7 @@ Dashboard (same worker, static assets + /api/*):
 | Backfill | `POST /api/backfill` | Bearer-authenticated; accepts `{signedPayloads: [...]}` and stores without Slacking. Fed by `scripts/backfill.mjs`. |
 | Stats | `GET /api/stats` | Aggregates per window (24h/7d/30d/all) and per app: est. revenue (USD), refunds, new subs, trial starts/conversions, renewals, one-time buys, churn signals. |
 | Chat | `POST /api/chat` | SSE stream. Claude gets the schema + a `query_db` tool (single SELECT/WITH statements only). |
-| Dashboard | `public/` | No build step. Auth is a passphrase → HttpOnly cookie; the static shell is public but every data endpoint requires auth. |
+| Dashboard | `public/` | No build step. Served only on `cha-ching.dgrlabs.co` behind Cloudflare Access; on top of that, auth is a passphrase → HttpOnly cookie for every data endpoint. |
 
 **Revenue figures are estimates**: Apple's `price` field is the customer-facing price in local currency (milliunits). We convert with static FX rates (`fx_rates` table in `schema.sql`) and show estimated proceeds at 85% (small business program). Real proceeds live in App Store Connect.
 

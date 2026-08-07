@@ -956,14 +956,40 @@ async function handleBackfill(request, env) {
 // Router
 // ---------------------------------------------------------------------------
 
+// Human-facing hostname, behind Cloudflare Access (one-time PIN, same Zero
+// Trust org as house.dgrlabs.co). Apple ingest and backfill live on
+// workers.dev and are unaffected.
+const DASHBOARD_HOSTNAME = "cha-ching.dgrlabs.co";
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
 
-    // Apple posts notifications to the root URL.
+    // Apple posts notifications to the root URL (the workers.dev hostname —
+    // that's what App Store Connect is configured with).
     if (request.method === "POST" && pathname === "/") {
       return handleAppleIngest(request, env, ctx);
+    }
+
+    // Backfill is script-driven (bearer token) and also stays reachable on
+    // workers.dev, where Access can't sit in front of it.
+    if (pathname === "/api/backfill" && request.method === "POST") {
+      if (!(await isAuthorized(request, env))) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      return handleBackfill(request, env);
+    }
+
+    // Everything human-facing — the dashboard shell and its data endpoints —
+    // is only served on the Access-protected hostname, so the workers.dev
+    // hostname can't be used to slip past Access. Fails closed if Access is
+    // ever removed.
+    if (url.hostname !== DASHBOARD_HOSTNAME) {
+      return new Response("Not found", { status: 404 });
+    }
+    if (env.ACCESS_ENABLED !== "1") {
+      return new Response("Service unavailable", { status: 503 });
     }
 
     if (pathname === "/api/login" && request.method === "POST") {
@@ -998,9 +1024,6 @@ export default {
       }
       if (pathname === "/api/chat" && request.method === "POST") {
         return handleChat(request, env, ctx);
-      }
-      if (pathname === "/api/backfill" && request.method === "POST") {
-        return handleBackfill(request, env);
       }
       return json({ error: "Not found" }, 404);
     }

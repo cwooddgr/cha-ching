@@ -161,3 +161,36 @@ purchase or refund.
 Bezelbub, Flip Flap and HeyMuso remain unset. That may be correct — Flip Flap is
 free and HeyMuso is unreleased — but it was not verified per app, so treat it as
 an open question rather than a decision.
+
+---
+
+## 2026-08-07 — Dashboard moved behind Cloudflare Access
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-07
+> **Status:** decided-by-user (moving the dashboard behind Access was Charlie's
+> standing todo; hostname choice `cha-ching.dgrlabs.co` and implementation are
+> mine, mirroring the house.dgrlabs.co pattern)
+
+The dashboard now lives at **https://cha-ching.dgrlabs.co**, behind the DGR
+Labs Zero Trust org (`dgrlabs.cloudflareaccess.com`, one-time PIN to
+charlie.wood@gmail.com). Access app "Cha-Ching Dashboard"
+(8031fe54-c1f6-4a0d-8166-f933a9a43a9d), policy de0a3cc1…, created via the
+`CF_ACCESS_TOKEN` API token that lives in the netbot repo's `.env`.
+
+Worker-side: dashboard assets and `/api/login|stats|pulse|chat` are refused
+(404) off the custom hostname, and the custom hostname fails closed (503)
+unless `ACCESS_ENABLED = "1"`. `POST /` (Apple ingest) and `POST /api/backfill`
+(bearer) are untouched on workers.dev — App Store Connect still points at the
+workers.dev URL for all apps; nothing to change there. The passphrase cookie
+auth remains in force behind Access (belt and suspenders; first visit to the
+new hostname asks for the passphrase once since the old cookie was scoped to
+workers.dev).
+
+Verified after ungating: unauth custom-domain request 302s to the Access
+login; workers.dev serves 404 for `/` and `/api/stats`, 200 for an empty
+ingest POST (no D1/Slack side effects), 401 for a bad backfill bearer.
+
+Rollback: set `ACCESS_ENABLED = "0"` + redeploy (dashboard fails closed);
+`DELETE access/apps/8031fe54…` removes the Access app; deleting the
+`routes` block + redeploy drops the custom domain entirely.
