@@ -227,3 +227,12 @@ were already there and are unchanged: hostname must be `cha-ching.dgrlabs.co`
 
 Rollback: `git revert` this commit — the passphrase path comes back intact and
 `DASHBOARD_SECRET` still holds the same value.
+
+**Global session, same day:** the DGR Labs Zero Trust org had no
+`session_duration` set, so the global (SSO/identity) session was running on
+Cloudflare's 24h default while both apps carried 730h app tokens. At Charlie's
+request I set the org to `730h` to match, via
+`PUT /accounts/85d08ef7…/access/organizations`. Read back and confirmed; no
+other org field changed. Practical effect: one PIN now covers both
+cha-ching.dgrlabs.co and house.dgrlabs.co for ~30 days, and a PIN prompt on
+either one is a genuine 30-day lapse rather than a routine daily re-auth.
