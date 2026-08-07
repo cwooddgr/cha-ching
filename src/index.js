@@ -280,49 +280,14 @@ function persistStatement(db, { notification, transaction, renewalInfo }) {
 // Auth
 // ---------------------------------------------------------------------------
 
-// The longest a cookie can actually live: Chrome (and the cookie draft spec)
-// silently clamp anything beyond 400 days down to 400. Safari's 7-day ITP cap
-// doesn't apply here — that one only bites cookies set from JS via
-// document.cookie, not HttpOnly ones we set from the server.
-const AUTH_MAX_AGE = 60 * 60 * 24 * 400;
-
-function authCookie(token) {
-  return `cc_auth=${token}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=${AUTH_MAX_AGE}`;
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function isAuthorized(request, env) {
+// Humans are authenticated by Cloudflare Access in front of
+// cha-ching.dgrlabs.co, not here — the dashboard and its data endpoints carry
+// no app-level auth of their own (same arrangement as house.dgrlabs.co).
+// DASHBOARD_SECRET survives only as the bearer token for /api/backfill, which
+// runs from a script against workers.dev where Access can't reach.
+function isAuthorized(request, env) {
   if (!env.DASHBOARD_SECRET) return false;
-  const bearer = request.headers.get("Authorization");
-  if (bearer === `Bearer ${env.DASHBOARD_SECRET}`) return true;
-  const cookie = request.headers.get("Cookie") || "";
-  const match = cookie.match(/(?:^|;\s*)cc_auth=([a-f0-9]{64})/);
-  if (!match) return false;
-  return match[1] === (await sha256Hex(env.DASHBOARD_SECRET));
-}
-
-async function handleLogin(request, env) {
-  let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: "Bad request" }, 400);
-  }
-  if (!env.DASHBOARD_SECRET || body.secret !== env.DASHBOARD_SECRET) {
-    return json({ error: "Invalid passphrase" }, 401);
-  }
-  const token = await sha256Hex(env.DASHBOARD_SECRET);
-  return new Response(JSON.stringify({ ok: true }), {
-    status: 200,
-    headers: {
-      "Content-Type": "application/json",
-      "Set-Cookie": authCookie(token),
-    },
-  });
+  return request.headers.get("Authorization") === `Bearer ${env.DASHBOARD_SECRET}`;
 }
 
 function json(obj, status = 200) {
@@ -975,7 +940,7 @@ export default {
     // Backfill is script-driven (bearer token) and also stays reachable on
     // workers.dev, where Access can't sit in front of it.
     if (pathname === "/api/backfill" && request.method === "POST") {
-      if (!(await isAuthorized(request, env))) {
+      if (!isAuthorized(request, env)) {
         return json({ error: "Unauthorized" }, 401);
       }
       return handleBackfill(request, env);
@@ -992,24 +957,11 @@ export default {
       return new Response("Service unavailable", { status: 503 });
     }
 
-    if (pathname === "/api/login" && request.method === "POST") {
-      return handleLogin(request, env);
-    }
-
+    // Past the hostname and Access checks above, every request here has
+    // already cleared Cloudflare Access — no further auth of our own.
     if (pathname.startsWith("/api/")) {
-      if (!(await isAuthorized(request, env))) {
-        return json({ error: "Unauthorized" }, 401);
-      }
       if (pathname === "/api/stats" && request.method === "GET") {
-        const resp = await handleStats(env);
-        // Slide the session forward every time the console loads. The window is
-        // capped at 400 days no matter what we ask for, so re-issuing on each
-        // load is the only way to make the code effectively permanent: it's
-        // asked for again only after 400 days of never opening the dashboard.
-        // Riding on /stats rather than /pulse keeps the seconds-interval poll
-        // from carrying a Set-Cookie on every response.
-        resp.headers.append("Set-Cookie", authCookie(await sha256Hex(env.DASHBOARD_SECRET)));
-        return resp;
+        return handleStats(env);
       }
       // Cheap watermark for the dashboard's live poll: a few bytes and one
       // indexed lookup, so the client can check "has anything landed?" often
@@ -1028,8 +980,8 @@ export default {
       return json({ error: "Not found" }, 404);
     }
 
-    // Everything else (the dashboard) is static assets. The shell is public;
-    // all data endpoints above require auth.
+    // Everything else (the dashboard) is static assets, served only on the
+    // Access-guarded hostname checked above.
     if (request.method === "GET" || request.method === "HEAD") {
       return env.ASSETS.fetch(request);
     }

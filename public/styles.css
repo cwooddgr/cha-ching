@@ -84,7 +84,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   #scanline, #noise, #flare-layer, #particles, #reticle, .rail, .runner,
-  .gauge-sweep, .wordmark::before, .wordmark::after, .auth-scan { display: none; }
+  .gauge-sweep, .wordmark::before, .wordmark::after { display: none; }
   * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
 }
 
@@ -131,47 +131,6 @@ body {
   font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
   color: var(--ink-3); text-shadow: none;
 }
-
-/* ── auth gate ──────────────────────────────────────────────────────── */
-
-.auth {
-  position: fixed; inset: 0; z-index: 50;
-  display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at 50% 40%, rgba(28,125,148,0.10), var(--bg) 70%);
-}
-.auth-panel {
-  width: min(360px, 90vw);
-  background: var(--panel);
-  border: 1px solid var(--panel-edge);
-  padding: 32px 28px;
-  text-align: center;
-}
-.auth-glyph svg { width: 96px; height: 96px; }
-.auth h1 {
-  font-family: var(--display); font-size: 30px; font-weight: 700;
-  letter-spacing: 0.32em; margin: 14px 0 4px; color: var(--ink);
-  text-shadow: 0 0 20px rgba(53,224,255,0.4);
-}
-.auth-sub { font-size: 10px; letter-spacing: 0.2em; color: var(--ink-3); margin-bottom: 26px; }
-.auth label {
-  display: block; text-align: left;
-  font-size: 10px; letter-spacing: 0.22em; color: var(--cyan); margin-bottom: 6px;
-}
-.auth input {
-  width: 100%; background: rgba(53,224,255,0.05);
-  border: 1px solid var(--panel-edge); color: var(--ink);
-  font-family: var(--mono); font-size: 15px; letter-spacing: 0.3em;
-  padding: 10px 12px; outline: none;
-}
-.auth input:focus { border-color: var(--cyan); box-shadow: 0 0 14px rgba(53,224,255,0.25); }
-.auth button {
-  width: 100%; margin-top: 14px;
-  background: var(--cyan-soft); border: 1px solid var(--cyan); color: var(--cyan);
-  font-family: var(--display); font-weight: 600; font-size: 14px; letter-spacing: 0.3em;
-  padding: 9px; cursor: pointer; transition: background 0.15s;
-}
-.auth button:hover { background: rgba(53,224,255,0.25); }
-.auth-error { margin-top: 12px; min-height: 18px; color: var(--red); font-size: 11px; letter-spacing: 0.1em; }
 
 /* ── rings & sigils ─────────────────────────────────────────────────── */
 
@@ -789,21 +748,6 @@ body {
   animation: boot-fill 1.5s cubic-bezier(0.2, 0.6, 0.3, 1) 0.1s forwards;
 }
 @keyframes boot-fill { to { width: 100%; } }
-
-/* ── auth gate scanner ──────────────────────────────────────────────── */
-
-.auth-panel { position: relative; overflow: hidden; }
-.auth-scan {
-  position: absolute; left: 0; right: 0; top: -20%; height: 46px;
-  background: linear-gradient(180deg, transparent, rgba(53, 224, 255, 0.10), transparent);
-  border-bottom: 1px solid rgba(53, 224, 255, 0.28);
-  animation: auth-scan 3.4s ease-in-out infinite alternate;
-  pointer-events: none; mix-blend-mode: screen;
-}
-@keyframes auth-scan {
-  from { top: -12%; }
-  to   { top: 100%; }
-}
 
 /* ── the REV-9000 eye ───────────────────────────────────────────────── */
 /* The only red light on the bridge. Breathes at rest; flares when money

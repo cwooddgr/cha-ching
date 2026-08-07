@@ -185,7 +185,8 @@ unless `ACCESS_ENABLED = "1"`. `POST /` (Apple ingest) and `POST /api/backfill`
 workers.dev URL for all apps; nothing to change there. The passphrase cookie
 auth remains in force behind Access (belt and suspenders; first visit to the
 new hostname asks for the passphrase once since the old cookie was scoped to
-workers.dev).
+workers.dev). *(Superseded later the same day — see the entry below; the
+passphrase layer was removed and Access is now the only gate.)*
 
 Verified after ungating: unauth custom-domain request 302s to the Access
 login; workers.dev serves 404 for `/` and `/api/stats`, 200 for an empty
@@ -194,3 +195,35 @@ ingest POST (no D1/Slack side effects), 401 for a bad backfill bearer.
 Rollback: set `ACCESS_ENABLED = "0"` + redeploy (dashboard fails closed);
 `DELETE access/apps/8031fe54…` removes the Access app; deleting the
 `routes` block + redeploy drops the custom domain entirely.
+
+---
+
+## 2026-08-07 — Passphrase gate removed; Access is the only auth
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-07
+> **Status:** decided-by-user (Charlie asked for option (a): strip the
+> passphrase layer so cha-ching matches the netbot house dashboard, where
+> Cloudflare Access is the sole gate)
+
+Follow-up to the entry above, which left the old passphrase → cookie auth
+stacked on top of Access — two logins for one dashboard. Now gone:
+
+- `src/index.js`: dropped `POST /api/login`, `authCookie()`, `sha256Hex()`,
+  the `cc_auth` cookie check, and the per-`/api/stats` cookie re-issue.
+  `isAuthorized()` shrank to a bearer-token compare and is called from
+  exactly one place — `POST /api/backfill`.
+- `public/`: removed the auth-gate markup, its CSS, the login form handler,
+  and the 401 → `showAuth()` branches. The page boots straight into the reel.
+
+`DASHBOARD_SECRET` stays, now purely as the backfill bearer token — backfill
+runs from a script against workers.dev, where Access can't sit in front of it.
+`scripts/backfill.mjs` and `.backfill.env` are unchanged.
+
+The dashboard's security now rests entirely on two worker-side checks that
+were already there and are unchanged: hostname must be `cha-ching.dgrlabs.co`
+(404 otherwise, so workers.dev can't serve data), and `ACCESS_ENABLED` must be
+`"1"` (503 otherwise, so removing the Access app fails closed rather than open).
+
+Rollback: `git revert` this commit — the passphrase path comes back intact and
+`DASHBOARD_SECRET` still holds the same value.

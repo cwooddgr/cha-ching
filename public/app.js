@@ -1,4 +1,4 @@
-// REV-9000 console — auth, stats rendering, event feed, analyst chat.
+// REV-9000 console — stats rendering, event feed, analyst chat.
 
 (() => {
   "use strict";
@@ -82,46 +82,16 @@
     $("#clock").textContent = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
   }, 1000);
 
-  // ── auth ──────────────────────────────────────────────────────────────
+  // ── console reveal ────────────────────────────────────────────────────
+  // There's no login step — Cloudflare Access gates the hostname, so we open
+  // straight into the boot reel. Hand the reveal to the fx layer, with a
+  // fallback so the console still appears if fx.js failed to load.
 
-  function showAuth(message) {
-    $("#console").classList.add("hidden");
-    $("#auth").classList.remove("hidden");
-    document.body.classList.add("booted"); // the auth gate needs no boot reel
-    if (message) $("#auth-error").textContent = message;
-    $("#auth-secret").focus();
-  }
-
-  // Hand the reveal to the fx layer (boot sequence), with a fallback so the
-  // console still appears if fx.js failed to load or never flips the class.
   function revealConsole() {
-    $("#auth").classList.add("hidden");
     $("#console").classList.remove("hidden");
     if (window.CCFX) window.CCFX.boot();
     setTimeout(() => document.body.classList.add("booted"), 3000);
   }
-
-  $("#auth-form").addEventListener("submit", async (e) => {
-    e.preventDefault();
-    $("#auth-error").textContent = "";
-    const secret = $("#auth-secret").value;
-    try {
-      const resp = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ secret }),
-      });
-      if (!resp.ok) {
-        $("#auth-error").textContent = "ACCESS DENIED";
-        return;
-      }
-      revealConsole();
-      loadStats();
-      startPulse();
-    } catch {
-      $("#auth-error").textContent = "LINK FAILURE";
-    }
-  });
 
   let pulseTimer = null;
   function startPulse() {
@@ -134,10 +104,6 @@
   async function loadStats() {
     try {
       const resp = await fetch("/api/stats");
-      if (resp.status === 401) {
-        showAuth("");
-        return;
-      }
       if (!resp.ok) throw new Error(`stats ${resp.status}`);
       stats = await resp.json();
       $("#link-dot").className = "dot dot-live";
@@ -463,10 +429,6 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: chatHistory }),
       });
-      if (resp.status === 401) {
-        showAuth("SESSION EXPIRED");
-        return;
-      }
       if (!resp.ok || !resp.body) throw new Error(`chat ${resp.status}`);
 
       const reader = resp.body.getReader();
@@ -593,17 +555,18 @@
   (async () => {
     try {
       const resp = await fetch("/api/stats");
-      if (resp.status === 401) {
-        showAuth("");
-        return;
-      }
+      if (!resp.ok) throw new Error(`stats ${resp.status}`);
       stats = await resp.json();
-      revealConsole();
       render();
-      refreshTimer = setTimeout(loadStats, FULL_REFRESH_MS);
-      startPulse();
-    } catch {
-      showAuth("LINK FAILURE — RETRY");
+    } catch (e) {
+      // No gate to fall back to any more, so come up anyway with the link
+      // marked down — the refresh below is the recovery path.
+      console.error(e);
+      $("#link-dot").className = "dot dot-down";
+      $("#link-state").textContent = "NO LINK";
     }
+    revealConsole();
+    refreshTimer = setTimeout(loadStats, FULL_REFRESH_MS);
+    startPulse();
   })();
 })();

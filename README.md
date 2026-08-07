@@ -18,7 +18,8 @@ and the backfill script target `cha-ching.charlie-wood.workers.dev`; humans use
 PIN, Zero Trust org `dgrlabs.cloudflareaccess.com` — same as house.dgrlabs.co).
 The worker refuses dashboard/data routes on workers.dev (404) so Access can't
 be bypassed, and fails closed (503) on the custom hostname if `ACCESS_ENABLED`
-isn't `"1"`. The passphrase → cookie auth below still applies on top of Access.
+isn't `"1"`. Access is the **only** gate: the dashboard and its data endpoints
+carry no app-level auth of their own (same arrangement as house.dgrlabs.co).
 
 ## Components
 
@@ -28,7 +29,7 @@ isn't `"1"`. The passphrase → cookie auth below still applies on top of Access
 | Backfill | `POST /api/backfill` | Bearer-authenticated; accepts `{signedPayloads: [...]}` and stores without Slacking. Fed by `scripts/backfill.mjs`. |
 | Stats | `GET /api/stats` | Aggregates per window (24h/7d/30d/all) and per app: est. revenue (USD), refunds, new subs, trial starts/conversions, renewals, one-time buys, churn signals. |
 | Chat | `POST /api/chat` | SSE stream. Claude gets the schema + a `query_db` tool (single SELECT/WITH statements only). |
-| Dashboard | `public/` | No build step. Served only on `cha-ching.dgrlabs.co` behind Cloudflare Access; on top of that, auth is a passphrase → HttpOnly cookie for every data endpoint. |
+| Dashboard | `public/` | No build step. Served only on `cha-ching.dgrlabs.co` behind Cloudflare Access, which is the whole of its auth — no login screen, no cookie. |
 
 **Revenue figures are estimates**: Apple's `price` field is the customer-facing price in local currency (milliunits). We convert with static FX rates (`fx_rates` table in `schema.sql`) and show estimated proceeds at 85% (small business program). Real proceeds live in App Store Connect.
 
@@ -43,7 +44,7 @@ isn't `"1"`. The passphrase → cookie auth below still applies on top of Access
 2. **Secrets:**
    ```sh
    npx wrangler secret put SLACK_WEBHOOK_URL   # Slack incoming webhook
-   npx wrangler secret put DASHBOARD_SECRET    # dashboard passphrase (also the backfill bearer token)
+   npx wrangler secret put DASHBOARD_SECRET    # bearer token for /api/backfill
    npx wrangler secret put ANTHROPIC_API_KEY   # for /api/chat
    ```
 
@@ -101,7 +102,7 @@ curl -X POST http://localhost:8787 \
 | Name | Description |
 |---|---|
 | `SLACK_WEBHOOK_URL` | Slack incoming webhook URL |
-| `DASHBOARD_SECRET` | Dashboard passphrase; also the bearer token for `/api/backfill` |
+| `DASHBOARD_SECRET` | Bearer token for `/api/backfill` (the only route with app-level auth; humans are gated by Cloudflare Access) |
 | `ANTHROPIC_API_KEY` | Claude API key for the analyst chat |
 
 ## Notification Types → Slack
