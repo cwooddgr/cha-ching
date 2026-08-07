@@ -279,47 +279,6 @@
     setTimeout(quake, STAMP_LAND_MS);
   });
 
-  // ── decrypting numerals ───────────────────────────────────────────────
-  // The hero figure never just changes — it re-decrypts: digits scramble
-  // and lock in left to right. A MutationObserver keeps this purely
-  // decorative; app.js writes plain text and never knows. `expected` tags
-  // our own writes so the observer doesn't chase its own tail.
-
-  const heroNum = document.getElementById("hero-revenue");
-  if (heroNum && !reduced) {
-    let settled = heroNum.textContent;
-    let expected = null;
-    let raf = 0;
-    const write = (txt) => { expected = txt; heroNum.textContent = txt; };
-
-    function decodeTo(target) {
-      cancelAnimationFrame(raf);
-      const start = performance.now();
-      const DUR = 650;
-      const step = (now) => {
-        const t = Math.min(1, (now - start) / DUR);
-        const lock = Math.floor(t * target.length);
-        let out = "";
-        for (let i = 0; i < target.length; i++) {
-          const ch = target[i];
-          out += i < lock || !/[0-9]/.test(ch)
-            ? ch
-            : String(Math.floor(Math.random() * 10));
-        }
-        write(t >= 1 ? target : out);
-        if (t < 1) raf = requestAnimationFrame(step);
-      };
-      raf = requestAnimationFrame(step);
-    }
-
-    new MutationObserver(() => {
-      const target = heroNum.textContent;
-      if (target === expected || target === settled) return;
-      settled = target;
-      decodeTo(target);
-    }).observe(heroNum, { childList: true, characterData: true, subtree: true });
-  }
-
   // ── particle field ────────────────────────────────────────────────────
   // Slow-drifting motes plus the occasional horizontal data streak.
 
