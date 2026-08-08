@@ -362,6 +362,19 @@
     $("#foot-updated").textContent = `REFRESHED ${utcStamp(stats.generated_at)}`;
   }
 
+  // ── demo drills ───────────────────────────────────────────────────────
+  // Footer triggers that replay the celebration/alarm fx without real money —
+  // same events the feed dispatches, so a demo shows exactly what a live
+  // sale or refund looks like.
+
+  $("#drill-sale").addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("cc:chaching", { detail: { label: "+ 9.99 USD" } }));
+  });
+
+  $("#drill-refund").addEventListener("click", () => {
+    document.dispatchEvent(new CustomEvent("cc:alert", { detail: { label: "− 9.99 USD" } }));
+  });
+
   function describe(ev) {
     const t = ev.notification_type;
     const s = ev.subtype;

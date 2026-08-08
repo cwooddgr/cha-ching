@@ -457,6 +457,18 @@ body {
   border-top: 1px solid rgba(53,224,255,0.12); padding-top: 10px;
 }
 
+/* Demo triggers — deliberately quiet until hovered, so they read as part of
+   the footer chrome rather than an invitation to click. */
+.foot-drill { display: inline-flex; align-items: center; gap: 8px; opacity: 0.55; transition: opacity 0.2s; }
+.foot-drill:hover { opacity: 1; }
+.foot-drill button {
+  background: transparent; border: 1px solid rgba(53,224,255,0.18);
+  color: var(--ink-3); font-family: var(--mono); font-size: 9px; letter-spacing: 0.16em;
+  padding: 1px 7px; cursor: pointer; transition: color 0.15s, border-color 0.15s;
+}
+.foot-drill button:hover { color: var(--cyan); border-color: var(--cyan); }
+#drill-refund:hover { color: var(--red); border-color: var(--red); }
+
 /* staggered boot */
 .col-metrics .panel:nth-child(1) { animation-delay: 0.05s; }
 .col-metrics .panel:nth-child(2) { animation-delay: 0.15s; }
