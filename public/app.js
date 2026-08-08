@@ -368,11 +368,11 @@
   // sale or refund looks like.
 
   $("#drill-sale").addEventListener("click", () => {
-    document.dispatchEvent(new CustomEvent("cc:chaching", { detail: { label: "+ 9.99 USD" } }));
+    document.dispatchEvent(new CustomEvent("cc:chaching", { detail: { label: "+$9.99 USD" } }));
   });
 
   $("#drill-refund").addEventListener("click", () => {
-    document.dispatchEvent(new CustomEvent("cc:alert", { detail: { label: "− 9.99 USD" } }));
+    document.dispatchEvent(new CustomEvent("cc:alert", { detail: { label: "−$9.99 USD" } }));
   });
 
   function describe(ev) {
