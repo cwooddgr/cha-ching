@@ -401,8 +401,37 @@
 
   // ── chat ──────────────────────────────────────────────────────────────
 
-  const chatHistory = [];
+  /* Continuity is a session id, not a replayed transcript.
+   *
+   * The console used to POST the whole conversation every turn, because the
+   * Worker was calling the Anthropic API and the API is stateless. It now
+   * proxies to Claude Code on bigiron, which keeps the conversation itself and
+   * resumes it by id — so we send one message and the id we were given back.
+   * That also keeps the (large) CLAUDE.md prefix warm in the prompt cache
+   * instead of re-reading it cold on every question.
+   *
+   * The id outlives a reload but not a long gap: resuming yesterday's thread
+   * drags yesterday's context back for no benefit. */
+  const CHAT_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+  let chatSession = null;
   let chatBusy = false;
+  try {
+    const saved = JSON.parse(localStorage.getItem("chaching.chat") || "null");
+    if (saved && Date.now() - saved.at < CHAT_SESSION_TTL_MS) chatSession = saved.id;
+  } catch {}
+
+  function saveChatSession() {
+    try {
+      if (chatSession) {
+        localStorage.setItem(
+          "chaching.chat",
+          JSON.stringify({ id: chatSession, at: Date.now() })
+        );
+      } else {
+        localStorage.removeItem("chaching.chat");
+      }
+    } catch {}
+  }
 
   $("#chat-form").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -429,7 +458,6 @@
     chatBusy = true;
     $("#chat-send").disabled = true;
 
-    chatHistory.push({ role: "user", content: text });
     chatAppend(el("div", "msg msg-user", text));
 
     const bubble = el("div", "msg msg-assistant streaming");
@@ -440,7 +468,7 @@
       const resp = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: chatHistory }),
+        body: JSON.stringify({ message: text, session_id: chatSession }),
       });
       if (!resp.ok || !resp.body) throw new Error(`chat ${resp.status}`);
 
@@ -468,9 +496,15 @@
             bubble.classList.add("streaming");
             $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
           } else if (event.type === "tool") {
-            const q = el("div", "msg msg-tool", event.sql);
+            // The bridge reports every tool call, not just SQL. For the
+            // analyst that is nearly always a ccq invocation, so show the
+            // command itself — it reads as the query it is.
+            const q = el("div", "msg msg-tool", event.brief || event.name);
             $("#chat-log").insertBefore(q, bubble);
             $("#chat-log").scrollTop = $("#chat-log").scrollHeight;
+          } else if (event.type === "session") {
+            chatSession = event.id;
+            saveChatSession();
           } else if (event.type === "error") {
             chatAppend(el("div", "msg msg-error", "⚠ " + event.error));
           }
@@ -480,11 +514,7 @@
       chatAppend(el("div", "msg msg-error", "⚠ LINK FAILURE: " + e.message));
     } finally {
       bubble.classList.remove("streaming");
-      if (assistantText) {
-        chatHistory.push({ role: "assistant", content: assistantText });
-      } else {
-        bubble.remove();
-      }
+      if (!assistantText) bubble.remove();
       chatBusy = false;
       $("#chat-send").disabled = false;
       $("#chat-text").focus();

@@ -16,6 +16,14 @@ routes = [
 # cha-ching.dgrlabs.co. Set to "0" to fail closed (503) if Access is ever removed.
 ACCESS_ENABLED = "1"
 
+# The ANALYST CONSOLE's backend: agent-bridge on bigiron, reached over a
+# Cloudflare tunnel. Not a secret (the bearer is CHAT_TOKEN, a worker secret
+# that must match /etc/agent-bridge/config.json on bigiron). The agent runs on
+# Charlie's Claude subscription rather than the Anthropic API — which is why
+# there is no ANTHROPIC_API_KEY here any more. Adding one back would silently
+# move billing.
+CHAT_BRIDGE_URL = "https://bridge.dgrlabs.co"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cha-ching"

@@ -5,10 +5,8 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "backfill": "node scripts/backfill.mjs"
-  },
-  "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0"
+    "backfill": "node scripts/backfill.mjs",
+    "ccq": "node scripts/ccq.mjs"
   },
   "devDependencies": {
     "jose": "^6.2.8",

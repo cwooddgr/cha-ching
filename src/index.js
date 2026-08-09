@@ -1,7 +1,22 @@
 // cha-ching: App Store Server Notifications V2 → D1 + Slack, with an FUI
-// dashboard and a Claude chat endpoint over the stored data.
-
-import Anthropic from "@anthropic-ai/sdk";
+// dashboard and a Claude analyst console over the stored data.
+//
+// The console no longer calls the Anthropic API from here. It proxies to
+// agent-bridge on bigiron, which runs Claude Code on Charlie's subscription
+// (decided-by-user 2026-08-09) — the same brain the house dashboard's CMD
+// panel talks to, on a different profile. See netbot/bin/agent-bridge.
+//
+// Two consequences worth knowing before editing this file:
+//   * The analyst's knowledge — schema, and the counting rules that make the
+//     numbers correct — moved OUT of a system-prompt constant here and into
+//     CLAUDE.md at the root of this repo, because that is what Claude Code
+//     loads as context. If you change how a figure should be counted, change
+//     it there. Losing those rules is how you get revenue inflated by
+//     FAMILY_SHARED duplicates again.
+//   * The agent reads D1 through /api/query below, not through a binding. The
+//     SELECT-only guard that used to sit in front of the chat tool now sits in
+//     front of that endpoint, and it is the only thing standing between an
+//     analytics console and a write handle.
 
 const APP_NAMES = {
   "co.dgrlabs.cdwally": "CD Wally",
@@ -652,76 +667,39 @@ async function handleStats(env) {
 // Chat (Claude over the data)
 // ---------------------------------------------------------------------------
 
-const CHAT_SYSTEM = `You are the analytics console for "cha-ching", DGR Labs' App Store revenue telemetry system. You answer questions about App Store Server Notification data stored in a Cloudflare D1 (SQLite) database, speaking to Charlie, the developer of these apps. Keep answers tight and quantitative; this is a heads-up display, not a report. Use plain prose or compact markdown tables.
+// ---------------------------------------------------------------------------
+// Analyst console
+// ---------------------------------------------------------------------------
+//
+// Two endpoints, pulling in opposite directions on purpose:
+//
+//   /api/query  is reachable on workers.dev with a bearer token, because the
+//               agent asking the questions runs on bigiron and cannot clear
+//               Cloudflare Access. Same shape as /api/backfill, same secret.
+//   /api/chat   is reachable ONLY on the Access-guarded hostname, because it
+//               is the human's end of the conversation.
 
-## Database schema
-
-TABLE notifications (
-  notification_uuid TEXT PRIMARY KEY,
-  signed_date INTEGER,          -- ms since epoch when Apple signed the notification
-  notification_type TEXT,       -- SUBSCRIBED, DID_RENEW, ONE_TIME_CHARGE, OFFER_REDEEMED, REFUND, EXPIRED, DID_CHANGE_RENEWAL_STATUS, DID_FAIL_TO_RENEW, ...
-  subtype TEXT,                 -- e.g. INITIAL_BUY, RESUBSCRIBE, AUTO_RENEW_DISABLED, BILLING_RETRY, VOLUNTARY
-  bundle_id TEXT,               -- co.dgrlabs.cdwally / co.dgrlabs.countdowns / co.dgrlabs.overflight / co.dgrlabs.heymuso
-  environment TEXT,             -- 'Production' or 'Sandbox' (ALWAYS filter to Production unless asked otherwise)
-  product_id TEXT,
-  transaction_id TEXT,
-  original_transaction_id TEXT, -- subscription lineage key: all events for one subscriber share this
-  price INTEGER,                -- price paid in MILLIUNITS of local currency (divide by 1000)
-  currency TEXT,
-  storefront TEXT,              -- alpha-3 country code
-  offer_type INTEGER,           -- 1 intro, 2 promo, 3 offer code, 4 win-back
-  offer_identifier TEXT,
-  offer_discount_type TEXT,     -- 'FREE_TRIAL', 'PAY_AS_YOU_GO', 'PAY_UP_FRONT', or NULL
-  in_app_ownership_type TEXT,   -- 'PURCHASED' or 'FAMILY_SHARED'
-  purchase_date INTEGER,        -- ms since epoch
-  expires_date INTEGER,         -- ms since epoch
-  auto_renew_status INTEGER,    -- 0/1 from renewal info when present
-  raw TEXT                      -- full decoded notification JSON
-)
-
-TABLE fx_rates (currency TEXT PRIMARY KEY, usd_rate REAL)  -- static approximate rates to USD
-
-## Semantics
-
-- Apps: CD Wally (cdwally, one-time unlock), Countdowns (countdowns, one-time unlock + subscription), Overflight (overflight, subscription with free trial; launched 2026-07-20), HeyMuso (heymuso, unreleased).
-- Revenue events: DID_RENEW, ONE_TIME_CHARGE, and SUBSCRIBED/OFFER_REDEEMED with subtype INITIAL_BUY or RESUBSCRIBE — excluding rows where offer_discount_type = 'FREE_TRIAL' or price = 0.
-- CRITICAL — always exclude in_app_ownership_type = 'FAMILY_SHARED' from any revenue, purchase-count, or conversion query. Apple sends one extra notification per family member when a shareable product is bought, carrying the FULL product price even though that family member paid nothing. They are the same sale, duplicated. Every cluster in this data is exactly 1 PURCHASED + N FAMILY_SHARED sharing one purchase_date. Counting them once inflated CD Wally's unlocks from 23 to 56 and its revenue from $466 to $1,025. Only count them when the question is explicitly about family sharing reach.
-- Estimated USD revenue: SUM(price * usd_rate) / 1000.0 joining fx_rates on currency. All revenue figures are ESTIMATES of gross customer price (no Apple commission, static FX). Estimated proceeds ≈ 85% of gross (small business program).
-- Subscription starts split three ways on INITIAL_BUY: free trial (offer_discount_type = 'FREE_TRIAL'), offer-code redemption (offer_type = 3, a promo code at a discounted price — NOT an organic paid signup), and organic paid. Overflight has no immediate-buy option, so every organic start is a trial; its only offer code so far is 'beta-thanks-2026' ($9.99 vs $19.99 yearly, launch week only). Keep codes out of "new subscribers" — they overstate both count and revenue per subscriber.
-- Trial start: subtype = 'INITIAL_BUY' AND offer_discount_type = 'FREE_TRIAL'. The trial's own expires_date is when it ends. Overflight's trial is 7 days.
-- Trial conversion: a later paid revenue event with the same original_transaction_id.
-- IMPORTANT — conversion rate must be measured over RESOLVED trials only: those whose expires_date has passed. A trial still inside its period has not had the chance to convert and must never count as a failure; report those separately as pending. Rate = converted / resolved, NOT converted / all starts (that understates it badly while an app is young).
-- Do not add cancellations to the denominator. Cancelling mid-trial (DID_CHANGE_RENEWAL_STATUS / AUTO_RENEW_DISABLED) is the *reason* a trial later fails to convert, not a separate outcome — the same person would be counted twice. Cancellation among in-flight trials is a useful leading indicator of where the rate is heading.
-- No settle grace is needed: Apple bills in advance, so DID_RENEW arrives ~8 hours BEFORE the trial's expires_date. Billing retry (DID_FAIL_TO_RENEW) is the rare exception where a verdict lands late.
-- History only goes back ~180 days before 2026-08 (Apple's notification-history limit); older CD Wally / Countdowns activity is not in the database.
-- Use SQLite date functions against ms epochs, e.g. signed_date >= unixepoch('now', '-7 days') * 1000. Current time comes from unixepoch('now').
-
-## Rules
-
-- Query the database rather than guessing. Multiple queries are fine.
-- SELECT/WITH statements only; the tool rejects anything else.
-- Round money to cents. Say when a figure is an estimate or a sample is small.`;
-
-const QUERY_TOOL = {
-  name: "query_db",
-  description:
-    "Run a read-only SQL query (SELECT or WITH ... SELECT) against the cha-ching D1 SQLite database. Returns rows as JSON, truncated to 200 rows.",
-  input_schema: {
-    type: "object",
-    properties: {
-      sql: { type: "string", description: "A single SELECT (or WITH...SELECT) statement." },
-    },
-    required: ["sql"],
-  },
-};
-
+/**
+ * The read-only guard, and the reason /api/query is safe to expose at all.
+ *
+ * Every rejection here is deliberate. Comments are stripped first, so a
+ * leading "-- innocuous\nDROP ..." cannot sail past the prefix test. Interior
+ * semicolons are refused because "SELECT 1; DROP TABLE notifications" is two
+ * statements. And WITH is keyword-screened, because SQLite happily allows
+ * WITH-prefixed DELETE/INSERT/UPDATE and the prefix test alone would wave
+ * those straight through.
+ *
+ * scripts/ccq.mjs carries a copy of this function for its own pre-flight
+ * check, so a mistake is caught before the round trip. This one is the
+ * enforcing copy — keep them in step.
+ */
 function isSelectOnly(sql) {
   const stripped = sql.replace(/--[^\n]*/g, " ").replace(/\/\*[\s\S]*?\*\//g, " ").trim();
   if (!/^(select|with)\b/i.test(stripped)) return false;
   // Reject multiple statements; a single trailing semicolon is fine.
   if (stripped.replace(/;\s*$/, "").includes(";")) return false;
   // SQLite allows WITH-prefixed DELETE/UPDATE/INSERT — a bare SELECT can't
-  // contain those statements, but a WITH can, so keyword-screen it.
+  // contain those as statements, but a WITH can, so keyword-screen it.
   if (/^with\b/i.test(stripped) && /\b(delete|insert|update|replace)\b/i.test(stripped)) return false;
   return true;
 }
@@ -739,92 +717,84 @@ async function runQuery(env, sql) {
   }
 }
 
-async function handleChat(request, env, ctx) {
+/**
+ * POST /api/query — the analyst agent's only route to the database.
+ *
+ * Bearer-authenticated and served on workers.dev, mirroring /api/backfill:
+ * bigiron is a script, not a browser, and cannot complete an Access one-time
+ * PIN. The SELECT-only guard above is what makes that acceptable.
+ */
+async function handleQuery(request, env) {
   let body;
   try {
     body = await request.json();
   } catch {
-    return json({ error: "Bad request" }, 400);
+    return json({ error: "Body must be JSON" }, 400);
   }
-  const history = Array.isArray(body.messages) ? body.messages : [];
-  if (history.length === 0 || history.length > 60) {
-    return json({ error: "messages must contain 1-60 entries" }, 400);
+  const sql = String(body.sql || "").trim();
+  if (!sql) return json({ error: "sql required" }, 400);
+  const out = await runQuery(env, sql);
+  // A refused or broken query is a 200 with an error field: the agent should
+  // read the reason and fix its SQL, not treat it as a transport failure.
+  return json(out);
+}
+
+/**
+ * POST /api/chat — proxy one turn to agent-bridge on bigiron.
+ *
+ * Deliberately thin: the body passes through as {message, session_id} and the
+ * upstream body is returned as the same stream object, so tokens reach the
+ * browser as they are produced. Anything done here beyond adding the bearer
+ * token is latency on every character.
+ */
+async function handleChat(request, env) {
+  if (!env.CHAT_BRIDGE_URL || !env.CHAT_TOKEN) {
+    return sseError("analyst console is not configured — CHAT_BRIDGE_URL/CHAT_TOKEN unset");
   }
-
-  const anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
-  const { readable, writable } = new TransformStream();
-  const writer = writable.getWriter();
-  const encoder = new TextEncoder();
-  const send = (event) => writer.write(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-
-  const run = async () => {
-    try {
-      const messages = history.map((m) => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: String(m.content ?? ""),
-      }));
-
-      for (let turn = 0; turn < 8; turn++) {
-        const stream = anthropic.messages.stream({
-          model: "claude-opus-5",
-          max_tokens: 16000,
-          system: CHAT_SYSTEM,
-          tools: [QUERY_TOOL],
-          messages,
-        });
-
-        stream.on("text", (delta) => send({ type: "text", text: delta }));
-        const message = await stream.finalMessage();
-
-        if (message.stop_reason === "refusal") {
-          await send({ type: "error", error: "Claude declined to answer that." });
-          break;
-        }
-
-        const toolUses = message.content.filter((b) => b.type === "tool_use");
-        if (message.stop_reason !== "tool_use" || toolUses.length === 0) {
-          break;
-        }
-
-        messages.push({ role: "assistant", content: message.content });
-        const toolResults = [];
-        for (const tool of toolUses) {
-          await send({ type: "tool", sql: tool.input?.sql || "" });
-          const result = await runQuery(env, tool.input?.sql || "");
-          toolResults.push({
-            type: "tool_result",
-            tool_use_id: tool.id,
-            content: JSON.stringify(result),
-            is_error: Boolean(result.error),
-          });
-        }
-        messages.push({ role: "user", content: toolResults });
-      }
-      await send({ type: "done" });
-    } catch (e) {
-      console.error("Chat error:", e);
-      try {
-        await send({ type: "error", error: "Chat failed: " + String(e.message || e) });
-      } catch {}
-    } finally {
-      try {
-        await writer.close();
-      } catch {}
-    }
-  };
-
-  ctx.waitUntil(run());
-  return new Response(readable, {
+  // Request body buffered (it's one short message); the RESPONSE body is what
+  // must stream, and that is passed through untouched below.
+  const body = await request.text();
+  let upstream;
+  try {
+    upstream = await fetch(`${env.CHAT_BRIDGE_URL}/chat/cha-ching`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.CHAT_TOKEN}`,
+      },
+      body,
+    });
+  } catch (e) {
+    return sseError("BRIDGE UNREACHABLE — " + String(e.message || e));
+  }
+  if (upstream.status === 409) {
+    return sseError("BUSY — bigiron is already answering a question");
+  }
+  if (!upstream.ok || !upstream.body) {
+    return sseError(`BRIDGE ERROR ${upstream.status}`);
+  }
+  return new Response(upstream.body, {
     headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
     },
   });
 }
 
-// ---------------------------------------------------------------------------
-// Ingest endpoints
-// ---------------------------------------------------------------------------
+/** An error the console can render inline, in the shape of a real stream. */
+function sseError(message) {
+  return new Response(
+    `data: ${JSON.stringify({ type: "error", error: message })}\n\n` +
+      `data: {"type":"end"}\n\n`,
+    {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+      },
+    }
+  );
+}
+
 
 async function handleAppleIngest(request, env, ctx) {
   try {
@@ -946,6 +916,22 @@ export default {
       return handleBackfill(request, env);
     }
 
+    // The analyst agent's read-only window onto D1, for the same reason
+    // backfill lives out here: it runs as a script on bigiron and cannot
+    // complete an Access one-time PIN. Bearer-authenticated, and every
+    // statement is screened by isSelectOnly() before it reaches the database.
+    if (pathname === "/api/query" && request.method === "POST") {
+      // Its own secret, not DASHBOARD_SECRET: "may read the database" and "may
+      // write rows into it via backfill" are different privileges and should
+      // not be the same string. QUERY_TOKEN lives on bigiron in
+      // /etc/cha-ching/ccq.json and nowhere else.
+      if (!env.QUERY_TOKEN ||
+          request.headers.get("Authorization") !== `Bearer ${env.QUERY_TOKEN}`) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      return handleQuery(request, env);
+    }
+
     // Everything human-facing — the dashboard shell and its data endpoints —
     // is only served on the Access-protected hostname, so the workers.dev
     // hostname can't be used to slip past Access. Fails closed if Access is
@@ -975,7 +961,7 @@ export default {
         return json({ count: row?.count || 0, newest: row?.newest || null });
       }
       if (pathname === "/api/chat" && request.method === "POST") {
-        return handleChat(request, env, ctx);
+        return handleChat(request, env);
       }
       return json({ error: "Not found" }, 404);
     }
