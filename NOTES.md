@@ -236,3 +236,55 @@ request I set the org to `730h` to match, via
 other org field changed. Practical effect: one PIN now covers both
 cha-ching.dgrlabs.co and house.dgrlabs.co for ~30 days, and a PIN prompt on
 either one is a genuine 30-day lapse rather than a routine daily re-auth.
+
+## The Analyst Console moved off the Anthropic API onto the Claude subscription
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-09
+> **Status:** decided-by-user — Charlie, building the equivalent panel for the
+> house dashboard: "I'd strongly prefer to use my subscription billing rather
+> than API billing if that's possible." Then: "we should update cha-ching to
+> use this design."
+
+The console used to call the Anthropic API from inside the Worker — the SDK,
+an `ANTHROPIC_API_KEY` secret, a `CHAT_SYSTEM` prompt and a `query_db` tool
+bound to D1. That bills the API per token. A Claude subscription can only be
+spent through Claude Code's OAuth credential, which is a file on a machine, so
+the model call cannot happen at the edge.
+
+It now proxies to **`agent-bridge`** on bigiron (the always-on Debian box at
+the ranch — see `netbot/bin/agent-bridge`), which runs Claude Code headless on
+Charlie's Max subscription. Reached over a Cloudflare tunnel; `/api/chat` is a
+thin passthrough that adds a bearer token and streams the SSE back untouched.
+The same daemon serves the house dashboard's chat panel on a separate profile.
+
+Three consequences that matter for anyone editing this repo:
+
+- **The counting rules moved into `CLAUDE.md` at the repo root**, because that
+  is what Claude Code loads as context. They used to be the `CHAT_SYSTEM`
+  string in `src/index.js`. If you change how a figure is counted, change it
+  *there* — losing those rules is how Family Sharing inflates CD Wally's
+  revenue from $466 to $1,025 again (see the first entry in this file).
+- **The agent reads D1 through `POST /api/query`**, bearer-authenticated and
+  reachable on workers.dev because a script on bigiron cannot clear Access.
+  Going direct to Cloudflare's D1 API was rejected: there is no read-only D1
+  scope, so that would have put a `D1:Edit` token — a write handle on
+  production revenue data — in a file on the box. `scripts/ccq.mjs` is the
+  client, and `agent-bridge` grants that profile exactly one Bash rule,
+  `Bash(ccq *)`, so the SELECT-only guard in front of `/api/query` is the
+  entire surface the analyst has.
+- **`QUERY_TOKEN` is deliberately separate from `DASHBOARD_SECRET`** — reading
+  the database and writing rows into it via backfill are different privileges.
+
+The client now sends one message plus a session id instead of replaying the
+whole transcript; continuity lives in Claude Code's session, which also keeps
+the CLAUDE.md prefix warm in the prompt cache.
+
+Verified live before shipping: per-app all-time revenue with Family Sharing
+correctly excluded (CD Wally $465.56, matching the figure above), and the
+SELECT-only guard refused all of DROP, comment-hidden DELETE, block-comment
+hidden UPDATE, stacked statements and `WITH`-prefixed DELETE.
+
+Rollback: `git revert` + `wrangler deploy`. The Worker would then need
+`ANTHROPIC_API_KEY` back — which silently returns billing to the API, so do it
+deliberately rather than as a reflex.
