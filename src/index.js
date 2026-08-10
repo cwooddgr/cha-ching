@@ -883,14 +883,21 @@ async function handleStats(env) {
       s[k] += plan[k];
     }
   }
-  // Lifetime unlocks join the product they belong to, as rows that carry an
-  // owner count but no MRR.
+  // One-time unlocks join the product they belong to, as rows that carry an
+  // owner count but no MRR. A product that sells NOTHING but unlocks (CD Wally)
+  // gets an entry of its own here — this panel is the customer base, not the
+  // subscriber base, so a product with no subscriptions still has one.
   for (const r of byKey.unlocks || []) {
-    const s = subscribers[r.bundle_id || "unknown"];
-    // Only for products that ALSO sell subscriptions. A product with nothing
-    // but one-time unlocks (CD Wally) has no subscriber base to be part of;
-    // it is already reported in the per-product breakdown.
-    if (!s) continue;
+    const id = r.bundle_id || "unknown";
+    if (!subscribers[id]) {
+      subscribers[id] = {
+        name: appName(id),
+        paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
+        mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
+        unlock_owners: 0, unlock_gross_usd: 0, plans: [],
+      };
+    }
+    const s = subscribers[id];
     const price = priceByPlan[r.product_id] || {};
     s.plans.push({
       product_id: r.product_id,

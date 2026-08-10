@@ -444,13 +444,29 @@
     return "/" + best[1];
   }
 
+  // A product's headline counts, built from what it actually sells rather than
+  // from a fixed template: a subscription-only product should not carry an
+  // "0 UNLOCKS", and an unlock-only product should not carry "0 PAYING · $0.00
+  // MRR", which reads as a business doing badly rather than one shaped
+  // differently.
+  function tally(s) {
+    const parts = [];
+    if (s.paying) parts.push(`<b>${num(s.paying)}</b> PAYING`);
+    if (s.trialing) parts.push(`<span class="pending">${num(s.trialing)} IN TRIAL</span>`);
+    if (s.unlock_owners) parts.push(`<b>${num(s.unlock_owners)}</b> UNLOCKS`);
+    return parts.join(" · ");
+  }
+
   function renderSubscribers() {
+    // By total customers, so a product that sells only unlocks ranks on its own
+    // terms rather than sinking below every subscription product on a paying
+    // count it can never have.
     const products = Object.entries(stats.subscribers || {})
       .filter(([, s]) => s.plans.length)
-      .sort((a, b) => b[1].paying - a[1].paying);
+      .sort((a, b) => b[1].paying + b[1].unlock_owners - (a[1].paying + a[1].unlock_owners));
 
     if (!products.length) {
-      $("#subs").innerHTML = `<div class="chat-hello">NO ACTIVE SUBSCRIPTIONS</div>`;
+      $("#subs").innerHTML = `<div class="chat-hello">NO CUSTOMERS YET</div>`;
       return;
     }
 
@@ -512,10 +528,8 @@
           <div class="subs-head">
             <span class="subs-app">${s.name}</span>
             <span class="subs-tally">
-              <b>${num(s.paying)}</b> PAYING${s.trialing ? ` · <span class="pending">${num(s.trialing)} IN TRIAL</span>` : ""}${
-                s.unlock_owners ? ` · <b>${num(s.unlock_owners)}</b> LIFETIME` : ""
-              }
-              <span class="subs-rate">${usd(s.mrr_usd)} MRR</span>
+              ${tally(s)}
+              ${s.paying ? `<span class="subs-rate">${usd(s.mrr_usd)} MRR</span>` : ""}
             </span>
           </div>
           ${rows}
