@@ -467,14 +467,14 @@
 
   // A product's headline counts, built from what it actually sells rather than
   // from a fixed template: a subscription-only product should not carry an
-  // "0 UNLOCKS", and an unlock-only product should not carry "0 PAYING · $0.00
+  // "0 LIFETIME", and an unlock-only product should not carry "0 SUBSCRIBERS · $0.00
   // MRR", which reads as a business doing badly rather than one shaped
   // differently.
   function tally(s) {
     const parts = [];
-    if (s.paying) parts.push(`<b>${num(s.paying)}</b> PAYING`);
-    if (s.trialing) parts.push(`<span class="pending">${num(s.trialing)} IN TRIAL</span>`);
-    if (s.unlock_owners) parts.push(`<b>${num(s.unlock_owners)}</b> UNLOCKS`);
+    if (s.paying) parts.push(`<b>${num(s.paying)}</b> SUBSCRIBERS`);
+    if (s.trialing) parts.push(`<span class="pending">${num(s.trialing)} TRIALS</span>`);
+    if (s.unlock_owners) parts.push(`<b>${num(s.unlock_owners)}</b> LIFETIME`);
     return parts.join(" · ");
   }
 
