@@ -623,6 +623,25 @@ async function handleStats(env) {
   // reports one as negative units against the original sale's date, so SUM
   // nets it out for free; the notifications half still has to check for it,
   // and for the later REFUND_REVERSED that puts the owner back.
+  // What Apple ACTUALLY keeps, per app. The 85% small-business figure is the
+  // commission alone; foreign storefronts also have tax taken off the top
+  // before proceeds, so the real rate is lower and varies with where an app
+  // sells. Measured 2026-08-10: CD Wally 77.5%, Overflight 81.9% — nobody is
+  // at 85%, and assuming it invented ~$155 of proceeds across the two.
+  keys.push("rates");
+  statements.push(
+    env.DB.prepare(
+      `SELECT s.bundle_id,
+              SUM(s.units * s.customer_price * COALESCE(fc.usd_rate, 0)) AS gross,
+              SUM(s.units * s.proceeds_per_unit * COALESCE(fp.usd_rate, 0)) AS net
+       FROM sales s
+       LEFT JOIN fx_rates fc ON fc.currency = s.customer_currency
+       LEFT JOIN fx_rates fp ON fp.currency = s.proceeds_currency
+       WHERE s.product_type LIKE 'IA%' AND s.proceeds_per_unit > 0
+       GROUP BY s.bundle_id`
+    )
+  );
+
   keys.push("unlocks");
   statements.push(
     env.DB.prepare(
@@ -813,9 +832,26 @@ async function handleStats(env) {
         ["INITIAL_BUY", "RESUBSCRIBE"].includes(r.subtype))) &&
     r.offer_discount_type !== "FREE_TRIAL";
 
+  // Apple's own proceeds figures, turned into a rate we can apply to the
+  // notification-derived gross above. Still an ESTIMATE — a historical rate on
+  // a statically-FX'd gross — but grounded in what Apple actually paid rather
+  // than a flat assumption. An app with no sales history yet (HeyMuso) falls
+  // back to the blended rate across everything we have sold.
+  const FALLBACK_PROCEEDS_RATE = 0.85; // commission only; used only if `sales` is empty
+  const rateByApp = new Map();
+  let allGross = 0;
+  let allNet = 0;
+  for (const r of byKey.rates || []) {
+    allGross += r.gross || 0;
+    allNet += r.net || 0;
+    if (r.bundle_id && r.gross > 0) rateByApp.set(r.bundle_id, r.net / r.gross);
+  }
+  const blendedProceedsRate = allGross > 0 ? allNet / allGross : FALLBACK_PROCEEDS_RATE;
+
   const windows = {};
   for (const key of Object.keys(WINDOWS)) {
     const agg = byKey[`agg:${key}`] || [];
+    const proceedsRate = (id) => rateByApp.get(id) ?? blendedProceedsRate;
     const trial = byKey[`trial:${key}`] || [];
     const inflight = byKey.inflight || [];
     const apps = {};
@@ -824,7 +860,7 @@ async function handleStats(env) {
       if (!apps[k]) {
         apps[k] = {
           name: appName(k),
-          revenue_usd: 0, refunds_usd: 0, events: 0,
+          revenue_usd: 0, proceeds_usd: 0, refunds_usd: 0, events: 0,
           new_subs: 0, offer_codes: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
           trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
           trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
@@ -889,9 +925,16 @@ async function handleStats(env) {
       a.trials_canceled_in_flight += r.canceled;
     }
 
+    // Per app, then summed — not total gross × one blended rate. The apps sell
+    // in different mixes of storefront and keep different fractions, so a
+    // blended rate would drift as the mix between them shifts.
+    for (const [id, a] of Object.entries(apps)) {
+      a.proceeds_usd = a.revenue_usd * proceedsRate(id);
+    }
+
     const total = {
       name: "All Products",
-      revenue_usd: 0, refunds_usd: 0, events: 0,
+      revenue_usd: 0, proceeds_usd: 0, refunds_usd: 0, events: 0,
       new_subs: 0, offer_codes: 0, resubscribes: 0, trial_starts: 0, trial_conversions: 0,
       trials_resolved: 0, trials_in_flight: 0, trials_canceled_in_flight: 0,
       trial_conversion_usd: 0, renewals: 0, one_time: 0, refunds: 0,
@@ -1039,6 +1082,9 @@ async function handleStats(env) {
       total_events: meta.total || 0,
       oldest: meta.oldest || null,
       newest: meta.newest || null,
+      // Shown beside the proceeds figure so the number explains itself — and
+      // so a drift away from the familiar 85% is visible rather than buried.
+      proceeds_rate: blendedProceedsRate,
       apps: APP_NAMES,
     },
   });

@@ -122,9 +122,18 @@ from 23 to 56 and its revenue from $466 to $1,025. Include them only when the
 question is explicitly about family-sharing reach.
 
 **Estimated USD revenue**: `SUM(price * usd_rate) / 1000.0`, joining
-`fx_rates` on `currency`. Every revenue figure here is an ESTIMATE of gross
-customer price — no Apple commission, static FX. Estimated proceeds ≈ 85% of
-gross (small business program). Say so when it matters.
+`fx_rates` on `currency`. Every revenue figure from `notifications` is an
+ESTIMATE of gross customer price — no Apple commission, static FX.
+
+⚠️ **Don't use 85% for proceeds.** The small-business rate is the commission
+alone; foreign storefronts also have tax taken off before proceeds, so the real
+figure is lower and differs by app with its storefront mix. Measured from
+Apple's own numbers on 2026-08-10: **CD Wally 77.5%, Overflight 81.9%, blended
+81.2%** — assuming 85% invented ~$155 across the two. Derive the rate from
+`sales` (`SUM(units*proceeds_per_unit*fx) / SUM(units*customer_price*fx)`)
+rather than assuming one, and prefer `sales.proceeds_per_unit` outright when
+the period is covered. `/api/stats` does this per app and reports the blended
+rate as `meta.proceeds_rate`.
 
 **Subscription starts** split three ways on `INITIAL_BUY`: free trial
 (`offer_discount_type = 'FREE_TRIAL'`), offer-code redemption (`offer_type = 3`
@@ -260,8 +269,9 @@ being asked for.
   Needs an App Store Connect **Team key** with the Finance role (NOT the
   In-App Purchase key `backfill.mjs` uses — Apple restricts that one to the
   App Store Server API). Both `.p8` files and `.backfill.env` are gitignored.
-  Re-run any time; it skips days already imported. Runs daily at 10:00 local
-  via the launchd agent in `scripts/co.dgrlabs.cha-ching.sales-import.plist`
+  Re-run any time; it skips days already imported. Runs **weekly** (Mondays,
+  10:00 local) via the launchd agent in
+  `scripts/co.dgrlabs.cha-ching.sales-import.plist`
   (install instructions in the file; log at
   `~/Library/Logs/cha-ching-sales-import.log`). A run missed while the Mac is
   asleep costs nothing — the next one backfills it.

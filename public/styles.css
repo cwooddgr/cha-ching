@@ -261,6 +261,8 @@ body {
 }
 .hero-caption { margin-top: 10px; font-size: 11px; letter-spacing: 0.08em; color: var(--ink-2); }
 .mono-strong { color: var(--cyan); }
+/* Dimmer than the figure it annotates — it's the basis, not the number. */
+.hero-rate { color: var(--ink-3, var(--ink-2)); opacity: 0.75; }
 .mono-red { color: var(--red); }
 .hero-gauge { position: relative; }
 .hero-gauge svg { width: 150px; height: 150px; display: block; position: relative; }

@@ -200,7 +200,12 @@
 
     // hero
     animateHero(t.revenue_usd);
-    $("#hero-proceeds").textContent = usd(t.revenue_usd * 0.85);
+    // Apple's measured effective rate per app, not a flat 85% — commission is
+    // only part of what comes off, and foreign tax makes the real figure lower
+    // and app-specific. The rate is shown so the number explains itself.
+    $("#hero-proceeds").textContent = usd(t.proceeds_usd);
+    const rate = stats.meta?.proceeds_rate;
+    $("#hero-proceeds-rate").textContent = rate ? ` (${(rate * 100).toFixed(1)}% eff.)` : "";
     $("#hero-refunds").textContent = "−" + usd(t.refunds_usd);
 
     // Trial conversion gauge: converted vs RESOLVED trials — trials whose own

@@ -1,5 +1,40 @@
 # cha-ching — notes
 
+## The 85% proceeds assumption was wrong; the hero now uses measured rates
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-10
+> **Status:** decided-by-user (Charlie asked what the sales import was buying, then chose this fix)
+
+Charlie asked what the daily sales import was actually helping with. Checking
+rather than answering from memory turned up a real error: **nothing is at 85%.**
+
+| | gross | Apple's actual net | our 85% estimate | real rate |
+|---|---|---|---|---|
+| CD Wally | $664.73 | $514.96 | $565.02 | **77.5%** |
+| Overflight | $3,417.41 | $2,799.49 | $2,904.79 | **81.9%** |
+
+The small-business rate is the commission alone. Foreign storefronts also have
+tax deducted before proceeds, so the true fraction is lower and varies with
+where an app sells — CD Wally sells heavily outside the US and lands 7.5 points
+under the assumption. Blended, we were inventing about **$155** of proceeds.
+
+`/api/stats` now derives each app's effective rate from `sales`
+(`SUM(units*proceeds_per_unit*fx) / SUM(units*customer_price*fx)`) and applies
+it to that app's windowed gross, summing per app rather than putting one
+blended rate on the total — the apps keep different fractions, so a blended
+figure would drift as the mix between them shifts. An app with no sales history
+(HeyMuso) falls back to the blended rate; the flat 85% survives only as a
+constant used when `sales` is empty entirely.
+
+The hero caption shows the blended rate beside the figure (`81.2% eff.`) so the
+number explains itself and a future drift is visible rather than buried.
+
+This is still an estimate — a historical rate applied to a statically-FX'd
+gross — but it is grounded in what Apple actually paid instead of a flat guess.
+CLAUDE.md's revenue rules were updated too; they told the analyst agent to
+assume 85%, which would have kept reproducing the error in chat answers.
+
 ## Sales reports imported; lifetime totals now come from Apple, not from us
 
 > **Author:** Claude Code (coder)
@@ -64,9 +99,16 @@ not an open bug**; CLAUDE.md says so too, so a future session doesn't rediscover
 it and file it as breakage.
 
 **Scheduling** (Charlie asked for it, same session): a launchd agent runs the
-importer daily at 10:00 local — 09:00 Pacific, after Apple's "generally
-available by 8 a.m. PT". Verified end to end via `launchctl kickstart`: exit 0,
-correctly found all 190 days already imported and fetched nothing.
+importer **weekly**, Mondays at 10:00 local — 09:00 Pacific, after Apple's
+"generally available by 8 a.m. PT". Verified end to end via `launchctl
+kickstart`: exit 0, correctly found all 190 days already imported and fetched
+nothing.
+
+It started as a daily job until Charlie asked what the daily cadence was
+actually buying, which was a fair challenge and mostly it wasn't. The panel
+does not degrade between runs — the splice reads `notifications` for anything
+newer than the last report we hold — so a week's gap costs a slightly-estimated
+proceeds figure for those days and nothing else. Weekly it is.
 
 I deliberately did **not** put this on a Cloudflare cron trigger. That would
 mean moving the App Store Connect Finance-role key — which can read every sales
