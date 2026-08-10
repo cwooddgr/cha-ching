@@ -572,20 +572,57 @@ async function handleStats(env) {
     ).bind(now)
   );
 
+  // Lifetime unlocks — the non-renewing way to buy the same entitlement the
+  // subscriptions grant. No expires_date, so they are invisible to every query
+  // above and need counting on their own terms: an owner, not a subscriber,
+  // and no MRR to contribute.
+  //
+  // A refund is a real un-purchase here in a way it is not for a subscription:
+  // the entitlement goes away and the owner count must drop with it. A later
+  // REFUND_REVERSED puts them back.
+  keys.push("unlocks");
+  statements.push(
+    env.DB.prepare(
+      `SELECT n.bundle_id, n.product_id,
+              COUNT(*) AS owners,
+              SUM(CASE WHEN n.offer_type = 3 THEN 1 ELSE 0 END) AS offer_code,
+              SUM(CASE WHEN fx.usd_rate IS NOT NULL THEN n.price * fx.usd_rate ELSE 0 END) AS gross_millis,
+              SUM(CASE WHEN fx.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+       FROM notifications n LEFT JOIN fx_rates fx ON fx.currency = n.currency
+       WHERE n.environment = 'Production'
+         AND n.notification_type = 'ONE_TIME_CHARGE'
+         AND n.expires_date IS NULL
+         AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+         AND NOT EXISTS (
+               SELECT 1 FROM notifications r
+               WHERE r.transaction_id = n.transaction_id
+                 AND r.notification_type = 'REFUND'
+                 AND NOT EXISTS (
+                       SELECT 1 FROM notifications rr
+                       WHERE rr.transaction_id = r.transaction_id
+                         AND rr.notification_type = 'REFUND_REVERSED'
+                         AND rr.signed_date > r.signed_date))
+       GROUP BY n.bundle_id, n.product_id`
+    )
+  );
+
   // The sticker price of each plan, for the panel above to show beside the
   // count. Taken from the most recent USD sale at full price — offers and
   // trials are skipped so a promo can't masquerade as the list price.
+  // period_days is null for one-time products, which is what marks them as
+  // priced once rather than per period.
   keys.push("plan_price");
   statements.push(
     env.DB.prepare(
       `SELECT product_id, price AS list_millis,
-              CAST(ROUND((expires_date - purchase_date) / 86400000.0) AS INTEGER) AS period_days
+              CASE WHEN expires_date IS NOT NULL AND purchase_date IS NOT NULL
+                   THEN CAST(ROUND((expires_date - purchase_date) / 86400000.0) AS INTEGER)
+                   END AS period_days
        FROM (
          SELECT n.product_id, n.price, n.expires_date, n.purchase_date,
                 ROW_NUMBER() OVER (PARTITION BY n.product_id ORDER BY n.signed_date DESC) AS rn
          FROM notifications n
          WHERE n.environment = 'Production' AND n.currency = 'USD' AND n.price > 0
-           AND n.expires_date IS NOT NULL AND n.purchase_date IS NOT NULL
            AND n.offer_type IS NULL
            AND (n.offer_discount_type IS NULL OR n.offer_discount_type != 'FREE_TRIAL')
            AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
@@ -821,13 +858,16 @@ async function handleStats(env) {
       subscribers[id] = {
         name: appName(id),
         paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
-        mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0, plans: [],
+        mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
+        unlock_owners: 0, unlock_gross_usd: 0, plans: [],
       };
     }
     const s = subscribers[id];
     const price = priceByPlan[r.product_id] || {};
     const plan = {
       product_id: r.product_id,
+      kind: "subscription",
+      count: r.paying || 0,
       paying: r.paying || 0,
       lapsing: r.lapsing || 0,
       offer_code: r.offer_code || 0,
@@ -843,10 +883,41 @@ async function handleStats(env) {
       s[k] += plan[k];
     }
   }
+  // Lifetime unlocks join the product they belong to, as rows that carry an
+  // owner count but no MRR.
+  for (const r of byKey.unlocks || []) {
+    const s = subscribers[r.bundle_id || "unknown"];
+    // Only for products that ALSO sell subscriptions. A product with nothing
+    // but one-time unlocks (CD Wally) has no subscriber base to be part of;
+    // it is already reported in the per-product breakdown.
+    if (!s) continue;
+    const price = priceByPlan[r.product_id] || {};
+    s.plans.push({
+      product_id: r.product_id,
+      kind: "unlock",
+      count: r.owners || 0,
+      owners: r.owners || 0,
+      offer_code: r.offer_code || 0,
+      gross_usd: (r.gross_millis || 0) / 1000,
+      unknown_fx: r.unknown_fx || 0,
+      list_usd: price.list_millis != null ? price.list_millis / 1000 : null,
+      period_days: null,
+    });
+    s.unlock_owners += r.owners || 0;
+    s.unlock_gross_usd += (r.gross_millis || 0) / 1000;
+    s.unknown_fx += r.unknown_fx || 0;
+  }
+
   for (const s of Object.values(subscribers)) {
-    // By headcount, matching what the panel's bars measure — sorting by MRR
-    // instead puts the shortest bar on top, which reads as a rendering bug.
-    s.plans.sort((a, b) => b.paying - a.paying || b.mrr_usd - a.mrr_usd);
+    // Recurring plans first, then the one-time way to buy the same thing;
+    // within each, by headcount, matching what the panel's bars measure —
+    // sorting by MRR instead puts the shortest bar on top, which reads as a
+    // rendering bug.
+    s.plans.sort(
+      (a, b) =>
+        (a.kind === b.kind ? 0 : a.kind === "subscription" ? -1 : 1) ||
+        b.count - a.count
+    );
   }
 
   // MRR headline and its 90-day history. The headline comes from the same

@@ -8,7 +8,7 @@
   --bg: #05090e;
   --panel: rgba(9, 17, 24, 0.82);
   --panel-edge: rgba(53, 224, 255, 0.28);
-  --grid-line: rgba(53, 224, 255, 0.05);
+  --grid-line: rgba(53, 224, 255, 0.075);
   --cyan: #35e0ff;
   --cyan-soft: rgba(53, 224, 255, 0.14);
   --cyan-dim: #1c7d94;
@@ -46,10 +46,25 @@ body {
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
     radial-gradient(ellipse 120% 80% at 50% -10%, rgba(28, 125, 148, 0.12), transparent 60%);
   background-size: 44px 44px, 44px 44px, 100% 100%;
-  animation: grid-pan 90s linear infinite;
+  animation: grid-pan 10s linear infinite;
 }
+/* Straight down, ~4.4px/s — one cell every 10s. Vertical rather than the
+   diagonal drift this used to have, and downward rather than up, so it runs
+   WITH the perspective floor below: the same world coming at the viewer, far
+   field slow and foreground fast. A diagonal fights that, and reads as a
+   texture sliding rather than a space moving.
+   Speed is set by what the eye can actually resolve, not by taste. The old
+   90s/88px worked out to ~1px/s, which is below the threshold for drift this
+   faint to register at all — it read as a still image. This is the slowest
+   setting that still reads as motion; the grid alpha was lifted a touch for
+   the same reason, since a line you can barely see is a line you cannot see
+   move. Dial the duration up to calm it, not down.
+   Exactly one tile (44px) per cycle is what makes the loop seamless — change
+   the distance and the background-size together or it will visibly jump. The
+   third layer is the corner glow, pinned at 0 0: it is lighting, not grid, and
+   must not travel. */
 @keyframes grid-pan {
-  to { background-position: 44px 88px, 44px 88px, 0 0; }
+  to { background-position: 0 44px, 0 44px, 0 0; }
 }
 /* Perspective floor racing toward the horizon at the bottom of the frame. */
 #grid-bg::after {
@@ -85,6 +100,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   #scanline, #noise, #flare-layer, #particles, #reticle, .rail, .runner,
   .gauge-sweep, .wordmark::before, .wordmark::after { display: none; }
+  /* Stop the two background pans by name. The blanket rule below only shortens
+     durations, which would turn a surviving infinite loop into a 1ms strobe —
+     the opposite of what was asked for. */
+  #grid-bg, #grid-bg::after { animation: none; }
   * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
 }
 
@@ -419,10 +438,25 @@ body {
   display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px;
   font-size: 10px; color: var(--ink-2); letter-spacing: 0.05em;
 }
+/* Every note gets its own element. Left as bare text, two adjacent notes merge
+   into a single anonymous flex item and run together with no gap between them
+   ("$2,167.42 grosscodes 5"), while the words inside one note get pushed apart
+   by the gap instead. */
+.plan-stats .stat { white-space: nowrap; }
 .plan-stats b { color: var(--ink); font-weight: 600; }
 .plan-stats .warn { color: var(--amber); }
 .plan-stats .pending { color: var(--ink-3); }
 .plan-stats .mrr-tag { color: var(--cyan); font-variant-numeric: tabular-nums; }
+.plan-stats .unlock-tag { color: var(--ink-3); letter-spacing: 0.12em; }
+
+/* A lifetime unlock is a real customer but not a recurring one. Draining the
+   bar's colour and its glow says that at a glance, without needing the label
+   to be read — the cyan bars are the ones producing MRR. */
+.plan-row.unlock .plan-bar {
+  background: linear-gradient(90deg, rgba(82, 112, 124, 0.55), var(--ink-3));
+  box-shadow: none;
+}
+.plan-row.unlock .plan-count { color: var(--ink-2); }
 
 /* ── event feed ─────────────────────────────────────────────────────── */
 

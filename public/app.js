@@ -459,20 +459,37 @@
         // Bars are scaled within a product, not across all of them: the
         // question a plan row answers is "which plan are people on", and
         // a shared scale would flatten a small app next to a large one.
-        const maxPaying = Math.max(1, ...s.plans.map((p) => p.paying));
+        const maxCount = Math.max(1, ...s.plans.map((p) => p.count));
         const rows = s.plans
           .map((p) => {
-            const pct = p.paying > 0 ? Math.max(2, (p.paying / maxPaying) * 100) : 0;
+            const unlock = p.kind === "unlock";
+            const pct = p.count > 0 ? Math.max(2, (p.count / maxCount) * 100) : 0;
             const price =
-              p.list_usd != null ? `${usd(p.list_usd)}${periodSuffix(p.period_days)}` : "—";
-            const notes = [`<span class="mrr-tag">${usd(p.mrr_usd)} MRR</span>`];
-            notes.push(`renewing <b>${num(p.paying - p.lapsing)}</b>`);
-            if (p.lapsing) notes.push(`<span class="warn">lapsing <b>${num(p.lapsing)}</b></span>`);
+              p.list_usd == null
+                ? "—"
+                : unlock
+                  ? `${usd(p.list_usd)} once`
+                  : `${usd(p.list_usd)}${periodSuffix(p.period_days)}`;
+
+            const notes = [];
+            if (unlock) {
+              // No MRR line, and deliberately no substitute for one: a lifetime
+              // unlock is revenue that already happened, and dividing it over
+              // some assumed lifespan would invent a recurring figure the data
+              // does not have.
+              notes.push(`<span class="unlock-tag">ONE-TIME · NO MRR</span>`);
+              notes.push(`${usd(p.gross_usd)} gross`);
+            } else {
+              notes.push(`<span class="mrr-tag">${usd(p.mrr_usd)} MRR</span>`);
+              notes.push(`renewing <b>${num(p.paying - p.lapsing)}</b>`);
+              if (p.lapsing) notes.push(`<span class="warn">lapsing <b>${num(p.lapsing)}</b></span>`);
+            }
             if (p.offer_code) notes.push(`codes <b>${num(p.offer_code)}</b>`);
             if (p.trialing) notes.push(`<span class="pending">+${num(p.trialing)} in trial</span>`);
             if (p.unknown_fx) notes.push(`<span class="warn">fx? ${num(p.unknown_fx)}</span>`);
+
             return `
-            <div class="plan-row">
+            <div class="plan-row${unlock ? " unlock" : ""}">
               <div class="plan-id">
                 <div class="plan-name">${planLabel(id, p.product_id)}</div>
                 <div class="plan-price">${price}</div>
@@ -480,9 +497,11 @@
               <div class="plan-data">
                 <div class="plan-bar-row">
                   <div class="plan-bar-track"><div class="plan-bar" style="width:${pct}%"></div></div>
-                  <div class="plan-count">${num(p.paying)}</div>
+                  <div class="plan-count">${num(p.count)}</div>
                 </div>
-                <div class="plan-stats">${notes.join("")}</div>
+                <div class="plan-stats">${notes
+                  .map((n) => `<span class="stat">${n}</span>`)
+                  .join("")}</div>
               </div>
             </div>`;
           })
@@ -493,7 +512,9 @@
           <div class="subs-head">
             <span class="subs-app">${s.name}</span>
             <span class="subs-tally">
-              <b>${num(s.paying)}</b> PAYING${s.trialing ? ` · <span class="pending">${num(s.trialing)} IN TRIAL</span>` : ""}
+              <b>${num(s.paying)}</b> PAYING${s.trialing ? ` · <span class="pending">${num(s.trialing)} IN TRIAL</span>` : ""}${
+                s.unlock_owners ? ` · <b>${num(s.unlock_owners)}</b> LIFETIME` : ""
+              }
               <span class="subs-rate">${usd(s.mrr_usd)} MRR</span>
             </span>
           </div>

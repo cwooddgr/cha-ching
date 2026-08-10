@@ -126,8 +126,15 @@ still paying (they bought the period they are in) but is lapsing: count them in
 the headcount and exclude them from any forward-looking run rate.
 
 This is **state, not a window** — "who is subscribed right now" must not move
-when the time window changes. Non-renewing products drop out for free, since
-they have no `expires_date` (Overflight's lifetime unlock, CD Wally's).
+when the time window changes.
+
+**Lifetime unlocks are owners, not subscribers.** `ONE_TIME_CHARGE` with no
+`expires_date` — Overflight's `lifetime.v2` ($69.99) and CD Wally's wallets.
+They never renew and contribute **no MRR**; never divide one over an assumed
+lifespan to manufacture one. Count them separately, and subtract refunds: a
+refund here removes the entitlement, so an owner count must drop with it
+(unless a later `REFUND_REVERSED` restores it). Every other query on this page
+excludes them for free, since they have no `expires_date` to be active within.
 
 **MRR** — each paying subscriber normalised to a month from **their own**
 period length, never from the product id: `price * usd_rate * 30.44 /
