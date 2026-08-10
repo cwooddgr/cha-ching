@@ -27,8 +27,14 @@ figure would drift as the mix between them shifts. An app with no sales history
 (HeyMuso) falls back to the blended rate; the flat 85% survives only as a
 constant used when `sales` is empty entirely.
 
-The hero caption shows the blended rate beside the figure (`81.2% eff.`) so the
-number explains itself and a future drift is visible rather than buried.
+The hero caption shows the rate beside the figure so the number explains itself
+and a future drift is visible rather than buried. It shows the rate for the
+**selected window's** actual mix — `proceeds_usd / revenue_usd` from the two
+figures on screen — not `meta.proceeds_rate`, which is blended across all time.
+I shipped the blended one first and caught it on the live page: the 7D window
+is carried entirely by Overflight, so the caption claimed 81.2% next to an
+81.9% division. An annotation that doesn't divide into the number beside it is
+worse than no annotation.
 
 This is still an estimate — a historical rate applied to a statically-FX'd
 gross — but it is grounded in what Apple actually paid instead of a flat guess.

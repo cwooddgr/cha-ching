@@ -204,7 +204,12 @@
     // only part of what comes off, and foreign tax makes the real figure lower
     // and app-specific. The rate is shown so the number explains itself.
     $("#hero-proceeds").textContent = usd(t.proceeds_usd);
-    const rate = stats.meta?.proceeds_rate;
+    // The rate for THIS window's actual mix, derived from the two figures on
+    // screen — not meta.proceeds_rate, which is blended across all time. In a
+    // window carried by one app the two disagree, and an annotation that
+    // doesn't divide into the number beside it is worse than none.
+    const rate =
+      t.revenue_usd > 0 ? t.proceeds_usd / t.revenue_usd : stats.meta?.proceeds_rate;
     $("#hero-proceeds-rate").textContent = rate ? ` (${(rate * 100).toFixed(1)}% eff.)` : "";
     $("#hero-refunds").textContent = "−" + usd(t.refunds_usd);
 
