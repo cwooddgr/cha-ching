@@ -116,6 +116,35 @@
         </div>
       </section>
 
+      <section class="panel bracket" id="mrr-panel">
+        <i class="runner" aria-hidden="true"></i>
+        <div class="panel-title"><span>▮ MONTHLY RECURRING REVENUE · EST USD</span><span class="panel-note">LIVE STATE · NOT WINDOWED</span></div>
+        <div class="mrr-row">
+          <div class="mrr-figure">
+            <div id="mrr-value" class="mrr-number">$0.00</div>
+            <div class="mrr-caption">
+              ARR <span id="mrr-arr" class="mono-strong">$0.00</span>
+              · <span id="mrr-subs">0</span> subscriptions
+              · at risk <span id="mrr-risk" class="mono-amber">−$0.00</span>
+            </div>
+          </div>
+          <div class="mrr-chart">
+            <svg id="mrr-spark" viewBox="0 0 320 78" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="mrr-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#35e0ff" stop-opacity="0.34"/>
+                  <stop offset="100%" stop-color="#35e0ff" stop-opacity="0"/>
+                </linearGradient>
+              </defs>
+              <path id="mrr-area" class="mrr-area" d=""/>
+              <polyline id="mrr-line" class="mrr-line" points=""/>
+              <circle id="mrr-head" class="mrr-head" r="2.6" cx="-10" cy="-10"/>
+            </svg>
+            <div class="mrr-axis"><span id="mrr-axis-from"></span><span id="mrr-axis-peak"></span></div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel bracket">
         <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ SIGNALS</span></div>
@@ -126,6 +155,12 @@
         <i class="runner" aria-hidden="true"></i>
         <div class="panel-title"><span>▮ PER-PRODUCT BREAKDOWN</span></div>
         <div id="apps" class="apps"></div>
+      </section>
+
+      <section class="panel bracket">
+        <i class="runner" aria-hidden="true"></i>
+        <div class="panel-title"><span>▮ SUBSCRIBER BASE · BY PLAN</span><span class="panel-note">LIVE STATE · NOT WINDOWED</span></div>
+        <div id="subs" class="subs"></div>
       </section>
 
       <section class="panel bracket">

@@ -285,6 +285,36 @@ body {
 .hero-gauge.thin .gauge-arc { stroke: var(--ink-3); filter: none; opacity: 0.75; }
 .hero-gauge.thin .gauge-text { fill: var(--ink-2); }
 
+/* ── MRR ────────────────────────────────────────────────────────────── */
+/* Deliberately a step down from the hero: gross revenue is the headline, MRR
+   is the instrument beside it. Same typeface, smaller, no glow. */
+
+.mrr-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.mrr-figure { min-width: 0; }
+.mrr-number {
+  font-family: var(--display); font-weight: 700;
+  font-size: clamp(30px, 4vw, 44px); line-height: 1;
+  letter-spacing: 0.04em; color: var(--ink);
+  text-shadow: 0 0 18px rgba(53, 224, 255, 0.22);
+  font-variant-numeric: tabular-nums;
+}
+.mrr-caption { margin-top: 8px; font-size: 11px; letter-spacing: 0.06em; color: var(--ink-2); }
+.mono-amber { color: var(--amber); }
+
+.mrr-chart { flex: 1 1 240px; min-width: 200px; max-width: 380px; }
+#mrr-spark { width: 100%; height: 78px; display: block; overflow: visible; }
+.mrr-line {
+  fill: none; stroke: var(--cyan); stroke-width: 1.6;
+  vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(53, 224, 255, 0.55));
+}
+.mrr-area { fill: url(#mrr-fill); stroke: none; }
+.mrr-head { fill: #fff; filter: drop-shadow(0 0 6px var(--cyan)); }
+.mrr-axis {
+  display: flex; justify-content: space-between;
+  font-size: 9px; letter-spacing: 0.14em; color: var(--ink-3); margin-top: 3px;
+}
+
 /* ── signal tiles ───────────────────────────────────────────────────── */
 
 .tiles {
@@ -337,6 +367,62 @@ body {
 .app-stats .warn { color: var(--amber); }
 .app-stats .pending { color: var(--ink-3); }
 .app-stats .bad { color: var(--red); }
+
+/* ── subscriber base ────────────────────────────────────────────────── */
+/* Same grid geometry as the per-app breakdown above, one level deeper: a
+   product heads a group, its plans are the rows underneath. */
+
+.subs { display: flex; flex-direction: column; gap: 16px; }
+.subs-group { border-left: 1px solid rgba(53, 224, 255, 0.16); padding-left: 12px; }
+.subs-head {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 9px;
+}
+.subs-app {
+  font-family: var(--display); font-weight: 600; font-size: 15px; letter-spacing: 0.08em;
+}
+.subs-tally {
+  font-size: 10px; letter-spacing: 0.16em; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.subs-tally b { color: var(--ink); font-weight: 600; font-size: 12px; }
+.subs-tally .pending { color: var(--ink-3); }
+/* An estimate stacked on an estimate — annualised from current period prices,
+   before Apple's cut. Kept quiet so it doesn't read as a measurement. */
+.subs-rate { margin-left: 10px; color: var(--ink-3); opacity: 0.72; }
+
+.plan-row {
+  display: grid; grid-template-columns: 120px 1fr; gap: 12px;
+  align-items: center; margin-top: 10px;
+}
+.plan-id { line-height: 1.3; }
+.plan-name {
+  font-size: 11px; letter-spacing: 0.14em; color: var(--ink); font-weight: 500;
+}
+.plan-price {
+  font-size: 10px; letter-spacing: 0.06em; color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.plan-data { min-width: 0; }
+.plan-bar-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+.plan-bar-track { height: 10px; background: rgba(53, 224, 255, 0.06); position: relative; overflow: hidden; }
+.plan-bar {
+  height: 100%; background: linear-gradient(90deg, var(--cyan-dim), var(--cyan));
+  box-shadow: 0 0 8px rgba(53, 224, 255, 0.3);
+  transition: width 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.plan-count {
+  font-family: var(--display); font-weight: 700; font-size: 18px; line-height: 1;
+  font-variant-numeric: tabular-nums; text-align: right; min-width: 46px;
+}
+.plan-stats {
+  display: flex; gap: 14px; flex-wrap: wrap; margin-top: 4px;
+  font-size: 10px; color: var(--ink-2); letter-spacing: 0.05em;
+}
+.plan-stats b { color: var(--ink); font-weight: 600; }
+.plan-stats .warn { color: var(--amber); }
+.plan-stats .pending { color: var(--ink-3); }
+.plan-stats .mrr-tag { color: var(--cyan); font-variant-numeric: tabular-nums; }
 
 /* ── event feed ─────────────────────────────────────────────────────── */
 
@@ -622,6 +708,8 @@ body {
 .col-metrics .panel:nth-child(2) .runner { animation-delay: -1.8s; }
 .col-metrics .panel:nth-child(3) .runner { animation-delay: -3.4s; }
 .col-metrics .panel:nth-child(4) .runner { animation-delay: -5.1s; }
+.col-metrics .panel:nth-child(5) .runner { animation-delay: -6.4s; }
+.col-metrics .panel:nth-child(6) .runner { animation-delay: -2.5s; }
 .col-chat .runner { animation-delay: -2.6s; }
 
 /* ── masthead EKG ───────────────────────────────────────────────────── */

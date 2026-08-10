@@ -112,6 +112,39 @@ paid. Keep offer codes out of "new subscribers": they overstate both the count
 and the revenue per subscriber. Overflight's only code so far is
 `beta-thanks-2026` ($9.99 vs $19.99 yearly, launch week only).
 
+**Paying subscribers (headcount, not flow)** — one subscriber is one
+`original_transaction_id`; their current standing is the row with the furthest-
+out `expires_date` (ties broken by `signed_date`, so a mid-period
+`AUTO_RENEW_DISABLED` wins over the `DID_RENEW` it shares an end date with).
+They are a paying subscriber if that row has `expires_date > now`, `price > 0`,
+and `offer_discount_type != 'FREE_TRIAL'`. Their plan is that row's
+`product_id`, so a plan change follows them.
+
+⚠️ A running free trial is **not** a paying subscriber — it is the pipeline.
+Report it separately as trialing. Someone who has switched auto-renew off *is*
+still paying (they bought the period they are in) but is lapsing: count them in
+the headcount and exclude them from any forward-looking run rate.
+
+This is **state, not a window** — "who is subscribed right now" must not move
+when the time window changes. Non-renewing products drop out for free, since
+they have no `expires_date` (Overflight's lifetime unlock, CD Wally's).
+
+**MRR** — each paying subscriber normalised to a month from **their own**
+period length, never from the product id: `price * usd_rate * 30.44 /
+((expires_date - purchase_date) / 86400000.0)`, summed (30.44 = 365.25/12).
+ARR is MRR × 12. Report the lapsing slice separately as at-risk MRR rather
+than netting it out — it is this month's revenue and next month's churn.
+
+⚠️ **Count one period per subscriber, not one per transaction.** Apple bills
+~8h before a cycle ends, so a renewal's period overlaps the one it replaces;
+summing every paid period double-counts everyone mid-renewal. For MRR at a
+past date, take each subscriber's most recent period paid for by then and
+count it only if it had not yet expired.
+
+Offer-code subscribers depress MRR while their discounted term runs
+(`beta-thanks-2026` is $9.99 against a $19.99 list) and will step up at
+renewal. Say so if MRR-per-subscriber is the question.
+
 **Trial conversion** — a later paid revenue event with the same
 `original_transaction_id`.
 

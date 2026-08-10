@@ -284,6 +284,9 @@
           .join("")
       : `<div class="chat-hello">NO EVENTS IN WINDOW</div>`;
 
+    renderMrr();
+    renderSubscribers();
+
     // feed
     const feed = stats.feed || [];
     const freshRevenue = []; // fresh production money — the fx layer celebrates these
@@ -360,6 +363,144 @@
         ? `HORIZON ${currentWindow === "24h" ? utcStamp(stats.generated_at - span) : utcDate(stats.generated_at - span)} → NOW · ${winLabel}`
         : `HORIZON ${utcDate(m.oldest)} → ${utcDate(m.newest)} · ${winLabel}`;
     $("#foot-updated").textContent = `REFRESHED ${utcStamp(stats.generated_at)}`;
+  }
+
+  // ── MRR ───────────────────────────────────────────────────────────────
+  // Every live subscription normalised to a month, plus 90 days of history.
+  // Like the subscriber panel this is state, not flow, so it ignores the
+  // window selector.
+
+  const SPARK_W = 320;
+  const SPARK_H = 78;
+
+  function renderMrr() {
+    const m = stats.mrr;
+    if (!m) return;
+
+    $("#mrr-value").textContent = usd(m.current_usd);
+    $("#mrr-arr").textContent = usd(m.current_usd * 12);
+    $("#mrr-subs").textContent = num(m.subscriptions);
+    $("#mrr-risk").textContent = "−" + usd(m.lapsing_usd);
+    $("#mrr-risk").classList.toggle("mono-amber", m.lapsing_usd > 0);
+
+    // The curve begins where the data does, not 90 days back: Overflight's
+    // first conversion is the first non-zero point, and a long flat run-up
+    // before it would just squash the part worth looking at.
+    const all = m.trend || [];
+    const firstLive = all.findIndex((p) => p.subs > 0);
+    const trend = firstLive === -1 ? [] : all.slice(firstLive);
+
+    const line = $("#mrr-line");
+    const area = $("#mrr-area");
+    const head = $("#mrr-head");
+    if (trend.length < 2) {
+      line.setAttribute("points", "");
+      area.setAttribute("d", "");
+      head.setAttribute("cx", "-10");
+      $("#mrr-axis-from").textContent = "";
+      $("#mrr-axis-peak").textContent = trend.length ? usd(trend[0].usd) : "AWAITING FIRST RENEWAL";
+      return;
+    }
+
+    // Zero-based, so the height of the curve reads as the size of the number
+    // rather than as the size of its recent wobble.
+    const peak = Math.max(...trend.map((p) => p.usd), 1e-9);
+    const x = (i) => (i / (trend.length - 1)) * SPARK_W;
+    const y = (v) => SPARK_H - 3 - (v / peak) * (SPARK_H - 8);
+    const pts = trend.map((p, i) => `${x(i).toFixed(1)},${y(p.usd).toFixed(1)}`);
+
+    line.setAttribute("points", pts.join(" "));
+    area.setAttribute("d", `M0,${SPARK_H} L${pts.join(" L")} L${SPARK_W},${SPARK_H} Z`);
+    head.setAttribute("cx", SPARK_W);
+    head.setAttribute("cy", y(trend[trend.length - 1].usd));
+
+    $("#mrr-axis-from").textContent = utcDate(trend[0].t);
+    $("#mrr-axis-peak").textContent = `PEAK ${usd(peak)}`;
+  }
+
+  // ── subscriber base ───────────────────────────────────────────────────
+  // How many people are paying for each plan right now. Deliberately outside
+  // the window selector — it's a headcount, not a flow, and it would be a lie
+  // for it to change when someone clicks 24H.
+
+  // "co.dgrlabs.overflight.pro.yearly.v2" → "PRO · YEARLY". Derived rather
+  // than mapped, so a new plan names itself the day it first sells.
+  function planLabel(bundleId, productId) {
+    const tail = productId.startsWith(bundleId + ".")
+      ? productId.slice(bundleId.length + 1)
+      : productId;
+    const parts = tail.split(".").filter((p) => p && !/^v\d+$/i.test(p));
+    return (parts.join(" · ") || productId).toUpperCase();
+  }
+
+  // Apple's billing periods land close enough to exact that snapping to the
+  // nearest known one beats trying to read the intent out of a product id.
+  const PERIODS = [[365, "yr"], [182, "6mo"], [90, "3mo"], [31, "mo"], [7, "wk"]];
+  function periodSuffix(days) {
+    if (!days) return "";
+    const best = PERIODS.reduce((a, b) =>
+      Math.abs(days - b[0]) < Math.abs(days - a[0]) ? b : a
+    );
+    return "/" + best[1];
+  }
+
+  function renderSubscribers() {
+    const products = Object.entries(stats.subscribers || {})
+      .filter(([, s]) => s.plans.length)
+      .sort((a, b) => b[1].paying - a[1].paying);
+
+    if (!products.length) {
+      $("#subs").innerHTML = `<div class="chat-hello">NO ACTIVE SUBSCRIPTIONS</div>`;
+      return;
+    }
+
+    $("#subs").innerHTML = products
+      .map(([id, s]) => {
+        // Bars are scaled within a product, not across all of them: the
+        // question a plan row answers is "which plan are people on", and
+        // a shared scale would flatten a small app next to a large one.
+        const maxPaying = Math.max(1, ...s.plans.map((p) => p.paying));
+        const rows = s.plans
+          .map((p) => {
+            const pct = p.paying > 0 ? Math.max(2, (p.paying / maxPaying) * 100) : 0;
+            const price =
+              p.list_usd != null ? `${usd(p.list_usd)}${periodSuffix(p.period_days)}` : "—";
+            const notes = [`<span class="mrr-tag">${usd(p.mrr_usd)} MRR</span>`];
+            notes.push(`renewing <b>${num(p.paying - p.lapsing)}</b>`);
+            if (p.lapsing) notes.push(`<span class="warn">lapsing <b>${num(p.lapsing)}</b></span>`);
+            if (p.offer_code) notes.push(`codes <b>${num(p.offer_code)}</b>`);
+            if (p.trialing) notes.push(`<span class="pending">+${num(p.trialing)} in trial</span>`);
+            if (p.unknown_fx) notes.push(`<span class="warn">fx? ${num(p.unknown_fx)}</span>`);
+            return `
+            <div class="plan-row">
+              <div class="plan-id">
+                <div class="plan-name">${planLabel(id, p.product_id)}</div>
+                <div class="plan-price">${price}</div>
+              </div>
+              <div class="plan-data">
+                <div class="plan-bar-row">
+                  <div class="plan-bar-track"><div class="plan-bar" style="width:${pct}%"></div></div>
+                  <div class="plan-count">${num(p.paying)}</div>
+                </div>
+                <div class="plan-stats">${notes.join("")}</div>
+              </div>
+            </div>`;
+          })
+          .join("");
+
+        return `
+        <div class="subs-group">
+          <div class="subs-head">
+            <span class="subs-app">${s.name}</span>
+            <span class="subs-tally">
+              <b>${num(s.paying)}</b> PAYING${s.trialing ? ` · <span class="pending">${num(s.trialing)} IN TRIAL</span>` : ""}
+              <span class="subs-rate">${usd(s.mrr_usd)} MRR</span>
+            </span>
+          </div>
+          ${rows}
+        </div>`;
+      })
+      .join("");
   }
 
   // ── demo drills ───────────────────────────────────────────────────────

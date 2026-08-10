@@ -340,8 +340,13 @@ const WINDOWS = {
 const HAZARD_BUCKETS = 7; // fractions of a trial, not days, so any length works
 
 function projectTrials(rows, now) {
-  const matured = rows.filter((r) => r.trial_end <= now);
-  const inFlight = rows.filter((r) => r.trial_end > now);
+  // A trial that has already been billed is decided, even with hours left on
+  // the clock — Apple charges ~8h before expiry. Leaving it in the in-flight
+  // pool would have the model assign a probability to a known outcome, and
+  // drag the projection down with it.
+  const resolved = (r) => r.trial_end <= now || r.converted;
+  const matured = rows.filter(resolved);
+  const inFlight = rows.filter((r) => !resolved(r));
   const bucketOf = (r, at) => {
     const span = r.trial_end - r.start;
     if (span <= 0) return 0;
@@ -486,8 +491,165 @@ async function handleStats(env) {
          AND t.offer_discount_type = 'FREE_TRIAL' AND t.subtype = 'INITIAL_BUY'
          AND (t.in_app_ownership_type IS NULL OR t.in_app_ownership_type != 'FAMILY_SHARED')
          AND t.expires_date > ?
+         -- "In flight" must mean STILL DECIDING. Apple bills ~8h before a
+         -- trial expires, so without this a subscriber who has already been
+         -- charged keeps showing up as pending until their trial period
+         -- formally ends — and would then contradict the subscriber panel,
+         -- which is already (correctly) counting them as paying.
+         AND NOT EXISTS (
+               SELECT 1 FROM notifications p
+               WHERE p.original_transaction_id = t.original_transaction_id
+                 AND p.price > 0 AND p.signed_date > t.signed_date
+                 AND (p.in_app_ownership_type IS NULL OR p.in_app_ownership_type != 'FAMILY_SHARED')
+                 AND (p.offer_discount_type IS NULL OR p.offer_discount_type != 'FREE_TRIAL')
+                 AND (p.notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
+                      OR (p.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
+                          AND p.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE'))))
        GROUP BY t.bundle_id`
     ).bind(now)
+  );
+
+  // Paying subscriber base, by plan. Like the projection and the in-flight
+  // count above this is STATE, not a window: "who is subscribed right now".
+  // It must not move when the window selector does.
+  //
+  // One subscriber is one original_transaction_id. Their current standing is
+  // the row carrying the furthest-out expires_date — for a converted trial
+  // that's the DID_RENEW (paid, later end date), for a live trial it's the
+  // INITIAL_BUY. Ties are broken by signed_date so a mid-period
+  // AUTO_RENEW_DISABLED wins over the DID_RENEW it shares an end date with,
+  // which is what makes `lapsing` visible at all.
+  //
+  // "Paying" means the CURRENT period is paid — a running free trial is not a
+  // paying subscriber, it's the pipeline, and is reported separately as
+  // `trialing`. Someone who has turned auto-renew off is still paying (they
+  // bought the period they're in) but is counted as `lapsing`, since the run
+  // rate below should not bank money that is already walking out.
+  //
+  // Non-renewing products never appear here: they have no expires_date, so
+  // Overflight's lifetime unlock and CD Wally's are excluded by construction
+  // rather than by a hardcoded list.
+  keys.push("subs");
+  statements.push(
+    env.DB.prepare(
+      `WITH latest AS (
+         SELECT n.bundle_id, n.product_id, n.currency, n.price,
+                n.expires_date, n.purchase_date, n.offer_discount_type,
+                n.offer_type, n.auto_renew_status,
+                ROW_NUMBER() OVER (PARTITION BY n.original_transaction_id
+                                   ORDER BY n.expires_date DESC, n.signed_date DESC) AS rn
+         FROM notifications n
+         WHERE n.environment = 'Production'
+           AND n.expires_date IS NOT NULL
+           AND n.original_transaction_id IS NOT NULL
+           AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+       ),
+       sub AS (
+         SELECT bundle_id, product_id, currency, price, offer_type,
+                (auto_renew_status IS NULL OR auto_renew_status != 0) AS renewing,
+                (expires_date - purchase_date) / 86400000.0 AS period_days,
+                (price > 0 AND (offer_discount_type IS NULL
+                                OR offer_discount_type != 'FREE_TRIAL')) AS paid
+         FROM latest WHERE rn = 1 AND expires_date > ?
+       )
+       SELECT s.bundle_id, s.product_id,
+              SUM(s.paid) AS paying,
+              SUM(CASE WHEN s.paid AND s.offer_type = 3 THEN 1 ELSE 0 END) AS offer_code,
+              SUM(CASE WHEN s.paid AND NOT s.renewing THEN 1 ELSE 0 END) AS lapsing,
+              SUM(CASE WHEN s.paid THEN 0 ELSE 1 END) AS trialing,
+              -- MRR: every subscription normalised to a month from its OWN
+              -- period length, rather than from the product id, so a weekly or
+              -- six-month plan needs no code. 30.44 = 365.25 / 12.
+              SUM(CASE WHEN s.paid AND fx.usd_rate IS NOT NULL AND s.period_days > 0
+                       THEN s.price * fx.usd_rate * 30.44 / s.period_days ELSE 0 END) AS mrr_millis,
+              -- The slice of that MRR whose owner has already switched
+              -- auto-renew off: still paying this period, gone by the next.
+              SUM(CASE WHEN s.paid AND NOT s.renewing AND fx.usd_rate IS NOT NULL AND s.period_days > 0
+                       THEN s.price * fx.usd_rate * 30.44 / s.period_days ELSE 0 END) AS mrr_lapsing_millis,
+              SUM(CASE WHEN s.paid AND fx.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+       FROM sub s LEFT JOIN fx_rates fx ON fx.currency = s.currency
+       GROUP BY s.bundle_id, s.product_id`
+    ).bind(now)
+  );
+
+  // The sticker price of each plan, for the panel above to show beside the
+  // count. Taken from the most recent USD sale at full price — offers and
+  // trials are skipped so a promo can't masquerade as the list price.
+  keys.push("plan_price");
+  statements.push(
+    env.DB.prepare(
+      `SELECT product_id, price AS list_millis,
+              CAST(ROUND((expires_date - purchase_date) / 86400000.0) AS INTEGER) AS period_days
+       FROM (
+         SELECT n.product_id, n.price, n.expires_date, n.purchase_date,
+                ROW_NUMBER() OVER (PARTITION BY n.product_id ORDER BY n.signed_date DESC) AS rn
+         FROM notifications n
+         WHERE n.environment = 'Production' AND n.currency = 'USD' AND n.price > 0
+           AND n.expires_date IS NOT NULL AND n.purchase_date IS NOT NULL
+           AND n.offer_type IS NULL
+           AND (n.offer_discount_type IS NULL OR n.offer_discount_type != 'FREE_TRIAL')
+           AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+       )
+       WHERE rn = 1`
+    )
+  );
+
+  // MRR history, one point per day for the last 90.
+  //
+  // The unit is a PAID PERIOD — one billing cycle a customer was actually
+  // charged for, keyed by its own transaction_id. Free trials are excluded
+  // (nobody paid), so the curve starts when the first trial converted, not at
+  // launch.
+  //
+  // Coverage is evaluated per SUBSCRIBER, not per period: on each day, take
+  // the most recent period that subscriber had paid for by then, and count it
+  // if it still had time left. Doing it per period instead would double-count
+  // every renewal — Apple bills ~8h before the previous cycle ends, so the old
+  // and new periods briefly overlap. This is the same "latest row wins" rule
+  // the subscriber panel uses, evaluated at a past instant, which is what
+  // makes the final point of this curve equal the headline figure.
+  //
+  // Periods that had already ended before the window opens are dropped: they
+  // contribute nothing to any day in it, and without that filter this query
+  // would grow with all history rather than with the active base.
+  const TREND_DAYS = 90;
+  const trendStart = now - (TREND_DAYS - 1) * 86400000;
+  keys.push("mrr_trend");
+  statements.push(
+    env.DB.prepare(
+      `WITH RECURSIVE
+       periods AS (
+         SELECT n.transaction_id,
+                MIN(n.original_transaction_id) AS oid,
+                MIN(n.signed_date) AS paid_at,
+                MIN(n.expires_date) AS end_at,
+                MAX(n.price * fx.usd_rate * 30.44
+                    / ((n.expires_date - n.purchase_date) / 86400000.0)) AS monthly_millis
+         FROM notifications n JOIN fx_rates fx ON fx.currency = n.currency
+         WHERE n.environment = 'Production' AND n.price > 0
+           AND n.expires_date IS NOT NULL AND n.purchase_date IS NOT NULL
+           AND n.expires_date > n.purchase_date
+           AND n.expires_date > ?
+           AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+           AND (n.offer_discount_type IS NULL OR n.offer_discount_type != 'FREE_TRIAL')
+           AND (n.notification_type = 'DID_RENEW'
+                OR (n.notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
+                    AND n.subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))
+         GROUP BY n.transaction_id
+       ),
+       days(d) AS (
+         SELECT ? UNION ALL SELECT d + 86400000 FROM days WHERE d + 86400000 <= ?
+       ),
+       cover AS (
+         SELECT days.d AS d, p.end_at, p.monthly_millis,
+                ROW_NUMBER() OVER (PARTITION BY days.d, p.oid ORDER BY p.paid_at DESC) AS rn
+         FROM days JOIN periods p ON p.paid_at <= days.d
+       )
+       SELECT d,
+              SUM(CASE WHEN end_at > d THEN monthly_millis ELSE 0 END) AS mrr_millis,
+              SUM(CASE WHEN end_at > d THEN 1 ELSE 0 END) AS subs
+       FROM cover WHERE rn = 1 GROUP BY d ORDER BY d`
+    ).bind(trendStart, trendStart, now)
   );
 
   // One row per trial, for the projection below. Small table (hundreds of
@@ -648,11 +810,69 @@ async function handleStats(env) {
     );
   }
 
+  // Subscriber base, grouped product → plan. Not window-scoped (see the query).
+  const priceByPlan = Object.fromEntries(
+    (byKey.plan_price || []).map((r) => [r.product_id, r])
+  );
+  const subscribers = {};
+  for (const r of byKey.subs || []) {
+    const id = r.bundle_id || "unknown";
+    if (!subscribers[id]) {
+      subscribers[id] = {
+        name: appName(id),
+        paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
+        mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0, plans: [],
+      };
+    }
+    const s = subscribers[id];
+    const price = priceByPlan[r.product_id] || {};
+    const plan = {
+      product_id: r.product_id,
+      paying: r.paying || 0,
+      lapsing: r.lapsing || 0,
+      offer_code: r.offer_code || 0,
+      trialing: r.trialing || 0,
+      mrr_usd: (r.mrr_millis || 0) / 1000,
+      mrr_lapsing_usd: (r.mrr_lapsing_millis || 0) / 1000,
+      unknown_fx: r.unknown_fx || 0,
+      list_usd: price.list_millis != null ? price.list_millis / 1000 : null,
+      period_days: price.period_days ?? null,
+    };
+    s.plans.push(plan);
+    for (const k of ["paying", "lapsing", "offer_code", "trialing", "mrr_usd", "mrr_lapsing_usd", "unknown_fx"]) {
+      s[k] += plan[k];
+    }
+  }
+  for (const s of Object.values(subscribers)) {
+    // By headcount, matching what the panel's bars measure — sorting by MRR
+    // instead puts the shortest bar on top, which reads as a rendering bug.
+    s.plans.sort((a, b) => b.paying - a.paying || b.mrr_usd - a.mrr_usd);
+  }
+
+  // MRR headline and its 90-day history. The headline comes from the same
+  // per-subscriber query as the panel above rather than from the last point of
+  // the trend, so the two can never drift apart by a rounding rule; they are
+  // built to agree by construction (see the trend query's comment).
+  const mrrCurrent = Object.values(subscribers).reduce((sum, s) => sum + s.mrr_usd, 0);
+  const mrrLapsing = Object.values(subscribers).reduce((sum, s) => sum + s.mrr_lapsing_usd, 0);
+  const mrr = {
+    current_usd: mrrCurrent,
+    lapsing_usd: mrrLapsing,
+    subscriptions: Object.values(subscribers).reduce((sum, s) => sum + s.paying, 0),
+    trend: (byKey.mrr_trend || []).map((r) => ({
+      t: r.d,
+      usd: (r.mrr_millis || 0) / 1000,
+      subs: r.subs || 0,
+    })),
+  };
+
   const meta = byKey.meta?.[0] || {};
   return json({
     generated_at: now,
     windows,
     projection,
+    subscribers,
+    mrr,
     feed: byKey.feed || [],
     meta: {
       total_events: meta.total || 0,
