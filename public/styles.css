@@ -407,6 +407,9 @@ body {
   font-variant-numeric: tabular-nums;
 }
 .subs-tally b { color: var(--ink); font-weight: 600; font-size: 12px; }
+/* Trials are marked up as <b> so they sit at the same size as the counts they
+   sit beside, then dimmed back down here — the class outweighs the element
+   selector above, so keep it a class if this ever moves. */
 .subs-tally .pending { color: var(--ink-3); }
 /* An estimate stacked on an estimate — annualised from current period prices,
    before Apple's cut. Kept quiet so it doesn't read as a measurement. */

@@ -473,7 +473,10 @@
   function tally(s) {
     const parts = [];
     if (s.paying) parts.push(`<b>${num(s.paying)}</b> SUBSCRIBERS`);
-    if (s.trialing) parts.push(`<span class="pending">${num(s.trialing)} TRIALS</span>`);
+    // <b class="pending"> on purpose: a trial is a headcount like the other two,
+    // so it takes their size, but it stays dim because it is pipeline rather
+    // than a customer we have.
+    if (s.trialing) parts.push(`<b class="pending">${num(s.trialing)} TRIALS</b>`);
     if (s.unlock_owners) parts.push(`<b>${num(s.unlock_owners)}</b> LIFETIME`);
     return parts.join(" · ");
   }
