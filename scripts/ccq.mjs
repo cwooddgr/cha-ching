@@ -27,7 +27,7 @@
 // CONFIG /etc/cha-ching/ccq.json (root:cwood 640, NOT in this repo):
 //   {"url": "https://cha-ching.<subdomain>.workers.dev/api/query",
 //    "token": "<the DASHBOARD_SECRET worker secret>"}
-// The workers.dev hostname, not cha-ching.dgrlabs.co: that one is behind
+// The workers.dev hostname, not rev-9000.dgrlabs.co: that one is behind
 // Cloudflare Access, which a script cannot clear.
 //
 // Usage:  ccq "SELECT count(*) FROM notifications"

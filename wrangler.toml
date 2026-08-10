@@ -2,18 +2,24 @@ name = "cha-ching"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 # workers.dev stays enabled on purpose: Apple's notification POSTs and the
-# backfill script target it. Humans use cha-ching.dgrlabs.co, behind
+# backfill script target it. Humans use rev-9000.dgrlabs.co, behind
 # Cloudflare Access — the worker refuses dashboard/data routes elsewhere.
 workers_dev = true
 
 routes = [
+  # rev-9000.dgrlabs.co is the dashboard's hostname; cha-ching.dgrlabs.co stays
+  # attached so old bookmarks land on a redirect rather than a dead name. The
+  # repo, the Worker and the D1 database keep the cha-ching name.
+  { pattern = "rev-9000.dgrlabs.co", custom_domain = true },
   { pattern = "cha-ching.dgrlabs.co", custom_domain = true },
 ]
 
 [vars]
 # "1" since 2026-08-07: the Cloudflare Access application "Cha-Ching Dashboard"
 # (one-time PIN, dgrlabs.cloudflareaccess.com) is live in front of
-# cha-ching.dgrlabs.co. Set to "0" to fail closed (503) if Access is ever removed.
+# both rev-9000.dgrlabs.co and the legacy cha-ching.dgrlabs.co (added to the
+# same app 2026-08-10 during the rename). Set to "0" to fail closed (503) if
+# Access is ever removed.
 ACCESS_ENABLED = "1"
 
 # The ANALYST CONSOLE's backend: agent-bridge on bigiron, reached over a

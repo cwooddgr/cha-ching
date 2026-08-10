@@ -296,7 +296,7 @@ function persistStatement(db, { notification, transaction, renewalInfo }) {
 // ---------------------------------------------------------------------------
 
 // Humans are authenticated by Cloudflare Access in front of
-// cha-ching.dgrlabs.co, not here — the dashboard and its data endpoints carry
+// rev-9000.dgrlabs.co, not here — the dashboard and its data endpoints carry
 // no app-level auth of their own (same arrangement as house.dgrlabs.co).
 // DASHBOARD_SECRET survives only as the bearer token for /api/backfill, which
 // runs from a script against workers.dev where Access can't reach.
@@ -1382,7 +1382,13 @@ async function handleSalesImport(request, env) {
 // Human-facing hostname, behind Cloudflare Access (one-time PIN, same Zero
 // Trust org as house.dgrlabs.co). Apple ingest and backfill live on
 // workers.dev and are unaffected.
-const DASHBOARD_HOSTNAME = "cha-ching.dgrlabs.co";
+const DASHBOARD_HOSTNAME = "rev-9000.dgrlabs.co";
+
+// The dashboard's previous hostname, kept attached and inside the same Access
+// application so old bookmarks land on a redirect rather than a dead name.
+// The repo, the Worker, the D1 database and the workers.dev hostname all keep
+// the cha-ching name — only the human-facing URL moved.
+const LEGACY_DASHBOARD_HOSTNAME = "cha-ching.dgrlabs.co";
 
 export default {
   async fetch(request, env, ctx) {
@@ -1437,6 +1443,15 @@ export default {
         return json({ error: "Unauthorized" }, 401);
       }
       return handleQuery(request, env);
+    }
+
+    // Old bookmarks. 302 rather than 301 on purpose: a permanent redirect
+    // sticks in browser caches long after it stops being true, and there is no
+    // SEO to protect on a private dashboard. Both hostnames sit inside the same
+    // Access application, so this is reached already authenticated.
+    if (url.hostname === LEGACY_DASHBOARD_HOSTNAME) {
+      url.hostname = DASHBOARD_HOSTNAME;
+      return Response.redirect(url.toString(), 302);
     }
 
     // Everything human-facing — the dashboard shell and its data endpoints —

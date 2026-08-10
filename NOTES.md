@@ -1,5 +1,56 @@
 # cha-ching — notes
 
+## Dashboard renamed to rev-9000.dgrlabs.co
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-10
+> **Status:** decided-by-user (Charlie asked for the rename; he also chose to have me make the Access change with netbot's token)
+
+The console has been called REV-9000 on screen for a while; the URL now matches.
+**Only the human-facing hostname moved** — the repo, the Worker, the D1
+database and the workers.dev hostname all keep the cha-ching name, so Apple's
+notification endpoint and the backfill/import scripts needed no changes.
+
+The hazard here was ordering, not the rename. This Worker's entire auth model is
+"serve the dashboard on exactly one hostname and trust that Cloudflare Access
+sits in front of it" — there is no login of its own. The Access application
+(`8031fe54-…`, "Cha-Ching Dashboard") listed **only** cha-ching.dgrlabs.co, with
+no wildcard, so pointing `DASHBOARD_HOSTNAME` at a hostname Access didn't cover
+would have published live revenue data to the internet.
+
+Sequenced so no such window ever existed:
+
+1. Attached rev-9000.dgrlabs.co as a Worker custom domain while
+   `DASHBOARD_HOSTNAME` still said cha-ching. Verified the new name returned
+   **404 on both `/` and `/api/stats`** — DNS and cert live, nothing served.
+2. Added rev-9000.dgrlabs.co to the Access app's `self_hosted_domains` and
+   `destinations`, keeping the old one. Verified both names then 302'd to
+   Access unauthenticated, `/api/stats` included.
+3. Only then flipped `DASHBOARD_HOSTNAME` and deployed.
+
+Step 1 was belt-and-braces: even if step 2 had failed, the Worker would still
+have refused to serve anything on the new name.
+
+The Access edit went through `PUT`, not `PATCH` — Cloudflare answers PATCH on
+that endpoint with `10405 Method not allowed for this authentication scheme`.
+PUT replaces the whole object, so the body was built programmatically from a
+fresh `GET` (saved at the time as a rollback) with the policy passed by id
+reference rather than redefined. Confirmed afterwards that the allow policy,
+the 730h session and the one-time-PIN IdP were all unchanged.
+
+cha-ching.dgrlabs.co stays attached and inside the same Access app, redirecting
+to the new name. **302, not 301**, deliberately: a permanent redirect sticks in
+browser caches long after it stops being true and there is no SEO to protect on
+a private dashboard.
+
+Note for whoever reads this next: a stale browser cache made the old hostname
+appear to still serve the dashboard after the flip, and a not-yet-propagated
+deploy made the new one 404 once. Both were transient. Hard-reload before
+believing either symptom.
+
+The historical entries below still name cha-ching.dgrlabs.co. That is left
+alone on purpose — they record what was true when written.
+
 ## The 85% proceeds assumption was wrong; the hero now uses measured rates
 
 > **Author:** Claude Code (coder)
