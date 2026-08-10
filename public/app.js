@@ -63,23 +63,34 @@
 
   const num = (n) => (n || 0).toLocaleString("en-US");
 
-  function utcStamp(ms) {
+  // Every timestamp on this console reads in the viewer's own timezone. The
+  // rows underneath are UTC and Apple's sales reports are cut on Pacific time,
+  // but whoever is watching this is standing in one place and wants to know
+  // when a sale landed for THEM. The zone is named once, in the header clock,
+  // so the readouts stay short without becoming ambiguous.
+  const TZ_LABEL =
+    new Intl.DateTimeFormat("en-US", { timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((p) => p.type === "timeZoneName")?.value || "LOCAL";
+
+  const pad = (x) => String(x).padStart(2, "0");
+
+  function localStamp(ms) {
     const d = new Date(ms);
-    const p = (x) => String(x).padStart(2, "0");
-    return `${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}Z`;
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   }
 
-  function utcDate(ms) {
+  function localDate(ms) {
     const d = new Date(ms);
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   }
 
   // ── clock ─────────────────────────────────────────────────────────────
 
+  $("#clock-label").textContent = TZ_LABEL;
   setInterval(() => {
     const d = new Date();
-    const p = (x) => String(x).padStart(2, "0");
-    $("#clock").textContent = `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
+    $("#clock").textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }, 1000);
 
   // ── console reveal ────────────────────────────────────────────────────
@@ -318,7 +329,7 @@
         }
         return `
         <div class="feed-row${fresh ? " fresh" : ""}">
-          <span class="feed-time">${utcStamp(ev.signed_date)}</span>
+          <span class="feed-time">${localStamp(ev.signed_date)}</span>
           <span class="feed-app">${APP_CODES[ev.bundle_id] || "—"}</span>
           <span class="feed-desc ${cls}"><span class="glyph">${glyph}</span>${desc}${sandbox ? " [SBX]" : ""}</span>
           <span class="feed-amt ${sandbox ? "sandbox" : ""}">${amt}</span>
@@ -360,9 +371,9 @@
     $("#horizon").textContent = !m.oldest
       ? "AWAITING DATA"
       : span
-        ? `HORIZON ${currentWindow === "24h" ? utcStamp(stats.generated_at - span) : utcDate(stats.generated_at - span)} → NOW · ${winLabel}`
-        : `HORIZON ${utcDate(m.oldest)} → ${utcDate(m.newest)} · ${winLabel}`;
-    $("#foot-updated").textContent = `REFRESHED ${utcStamp(stats.generated_at)}`;
+        ? `HORIZON ${currentWindow === "24h" ? localStamp(stats.generated_at - span) : localDate(stats.generated_at - span)} → NOW · ${winLabel}`
+        : `HORIZON ${localDate(m.oldest)} → ${localDate(m.newest)} · ${winLabel}`;
+    $("#foot-updated").textContent = `REFRESHED ${localStamp(stats.generated_at)}`;
   }
 
   // ── MRR ───────────────────────────────────────────────────────────────
@@ -414,7 +425,7 @@
     head.setAttribute("cx", SPARK_W);
     head.setAttribute("cy", y(trend[trend.length - 1].usd));
 
-    $("#mrr-axis-from").textContent = utcDate(trend[0].t);
+    $("#mrr-axis-from").textContent = localDate(trend[0].t);
     $("#mrr-axis-peak").textContent = `PEAK ${usd(peak)}`;
   }
 
@@ -495,12 +506,19 @@
               // does not have.
               notes.push(`<span class="unlock-tag">ONE-TIME · NO MRR</span>`);
               notes.push(`${usd(p.gross_usd)} gross`);
+              // Apple's own post-commission number, straight from the sales
+              // reports — not gross × 0.85.
+              notes.push(`${usd(p.proceeds_usd)} net`);
+              // Comps and offer codes both land here: a unit Apple reported at
+              // zero proceeds. "codes" would be too narrow a word for a press
+              // copy or a family gift.
+              if (p.offer_code) notes.push(`free <b>${num(p.offer_code)}</b>`);
             } else {
               notes.push(`<span class="mrr-tag">${usd(p.mrr_usd)} MRR</span>`);
               notes.push(`renewing <b>${num(p.paying - p.lapsing)}</b>`);
               if (p.lapsing) notes.push(`<span class="warn">lapsing <b>${num(p.lapsing)}</b></span>`);
+              if (p.offer_code) notes.push(`codes <b>${num(p.offer_code)}</b>`);
             }
-            if (p.offer_code) notes.push(`codes <b>${num(p.offer_code)}</b>`);
             if (p.trialing) notes.push(`<span class="pending">+${num(p.trialing)} in trial</span>`);
             if (p.unknown_fx) notes.push(`<span class="warn">fx? ${num(p.unknown_fx)}</span>`);
 

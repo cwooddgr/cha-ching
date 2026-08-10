@@ -401,10 +401,40 @@ function projectTrials(rows, now) {
   return total > 0 ? { rate: expected / total, trials: total } : null;
 }
 
+/**
+ * The UTC instant at which a Pacific-Time report day ends.
+ *
+ * Apple's sales reports are cut on Pacific Time; notifications.signed_date is
+ * UTC. Splicing the two sources needs the exact boundary or the join either
+ * double-counts an hour or drops one, and the offset moves twice a year.
+ * Workers ship full ICU, so ask Intl rather than hardcoding -07:00.
+ */
+function ptDayEndUtcMs(dateStr) {
+  const nextMidnightUtc = Date.parse(`${dateStr}T00:00:00Z`) + 86400000;
+  const offset = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Los_Angeles",
+    timeZoneName: "longOffset",
+  })
+    .formatToParts(new Date(nextMidnightUtc))
+    .find((p) => p.type === "timeZoneName")?.value;
+  const m = offset?.match(/GMT([+-])(\d{2}):(\d{2})/);
+  if (!m) return nextMidnightUtc;
+  const minutes = (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3]));
+  return nextMidnightUtc - minutes * 60000;
+}
+
 async function handleStats(env) {
   const now = Date.now();
   const statements = [];
   const keys = [];
+
+  // How far Apple's sales reports reach. Everything at or before this is
+  // Apple's to answer for; after it, only notifications know anything yet.
+  const watermarkRow = await env.DB.prepare(
+    "SELECT MAX(report_date) AS d FROM sales_import_log"
+  ).first();
+  const salesWatermark = watermarkRow?.d || null;
+  const salesCutoffMs = salesWatermark ? ptDayEndUtcMs(salesWatermark) : 0;
 
   for (const [key, span] of Object.entries(WINDOWS)) {
     const since = span == null ? 0 : now - span;
@@ -577,33 +607,73 @@ async function handleStats(env) {
   // above and need counting on their own terms: an owner, not a subscriber,
   // and no MRR to contribute.
   //
+  // AUTHORITY: Apple's sales reports, not notifications. Notification history
+  // only reaches back 180 days, which hid 8 CD Wally unlocks and all 4 of
+  // Countdowns' behind the cliff, and its money is our static-FX estimate
+  // rather than Apple's actual figures. The two agree to the cent where both
+  // are complete (verified 2026-08-10), so the seam below is safe.
+  //
+  // Reports lag by a day, so notifications still supply everything after the
+  // watermark — otherwise a sale made today wouldn't reach a dashboard whose
+  // entire job is watching sales land. Each source owns a disjoint stretch of
+  // time, which is what keeps the union from double-counting.
+  //
   // A refund is a real un-purchase here in a way it is not for a subscription:
-  // the entitlement goes away and the owner count must drop with it. A later
-  // REFUND_REVERSED puts them back.
+  // the entitlement goes away and the owner count must drop with it. Apple
+  // reports one as negative units against the original sale's date, so SUM
+  // nets it out for free; the notifications half still has to check for it,
+  // and for the later REFUND_REVERSED that puts the owner back.
   keys.push("unlocks");
   statements.push(
     env.DB.prepare(
-      `SELECT n.bundle_id, n.product_id,
-              COUNT(*) AS owners,
-              SUM(CASE WHEN n.offer_type = 3 THEN 1 ELSE 0 END) AS offer_code,
-              SUM(CASE WHEN fx.usd_rate IS NOT NULL THEN n.price * fx.usd_rate ELSE 0 END) AS gross_millis,
-              SUM(CASE WHEN fx.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
-       FROM notifications n LEFT JOIN fx_rates fx ON fx.currency = n.currency
-       WHERE n.environment = 'Production'
-         AND n.notification_type = 'ONE_TIME_CHARGE'
-         AND n.expires_date IS NULL
-         AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
-         AND NOT EXISTS (
-               SELECT 1 FROM notifications r
-               WHERE r.transaction_id = n.transaction_id
-                 AND r.notification_type = 'REFUND'
-                 AND NOT EXISTS (
-                       SELECT 1 FROM notifications rr
-                       WHERE rr.transaction_id = r.transaction_id
-                         AND rr.notification_type = 'REFUND_REVERSED'
-                         AND rr.signed_date > r.signed_date))
-       GROUP BY n.bundle_id, n.product_id`
-    )
+      `SELECT bundle_id, product_id,
+              SUM(owners) AS owners,
+              SUM(offer_code) AS offer_code,
+              SUM(gross_millis) AS gross_millis,
+              SUM(proceeds_millis) AS proceeds_millis,
+              SUM(unknown_fx) AS unknown_fx
+       FROM (
+         SELECT s.bundle_id AS bundle_id, s.sku AS product_id,
+                SUM(s.units) AS owners,
+                SUM(CASE WHEN s.proceeds_per_unit = 0 THEN s.units ELSE 0 END) AS offer_code,
+                SUM(s.units * s.customer_price * COALESCE(fxc.usd_rate, 0)) * 1000 AS gross_millis,
+                SUM(s.units * s.proceeds_per_unit * COALESCE(fxp.usd_rate, 0)) * 1000 AS proceeds_millis,
+                SUM(CASE WHEN s.customer_price > 0 AND fxc.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+         FROM sales s
+         LEFT JOIN fx_rates fxc ON fxc.currency = s.customer_currency
+         LEFT JOIN fx_rates fxp ON fxp.currency = s.proceeds_currency
+         WHERE s.product_type LIKE 'IA%' AND s.period IS NULL
+         GROUP BY s.bundle_id, s.sku
+
+         UNION ALL
+
+         SELECT n.bundle_id, n.product_id,
+                COUNT(*) AS owners,
+                SUM(CASE WHEN n.offer_type = 3 THEN 1 ELSE 0 END) AS offer_code,
+                SUM(CASE WHEN fx.usd_rate IS NOT NULL THEN n.price * fx.usd_rate ELSE 0 END) AS gross_millis,
+                -- Apple's small-business rate. An estimate, unlike the sales
+                -- half above, which carries Apple's own proceeds figure.
+                SUM(CASE WHEN fx.usd_rate IS NOT NULL THEN n.price * fx.usd_rate * 0.85 ELSE 0 END) AS proceeds_millis,
+                SUM(CASE WHEN fx.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+         FROM notifications n LEFT JOIN fx_rates fx ON fx.currency = n.currency
+         WHERE n.environment = 'Production'
+           AND n.notification_type = 'ONE_TIME_CHARGE'
+           AND n.expires_date IS NULL
+           AND n.signed_date > ?
+           AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+           AND NOT EXISTS (
+                 SELECT 1 FROM notifications r
+                 WHERE r.transaction_id = n.transaction_id
+                   AND r.notification_type = 'REFUND'
+                   AND NOT EXISTS (
+                         SELECT 1 FROM notifications rr
+                         WHERE rr.transaction_id = r.transaction_id
+                           AND rr.notification_type = 'REFUND_REVERSED'
+                           AND rr.signed_date > r.signed_date))
+         GROUP BY n.bundle_id, n.product_id
+       )
+       GROUP BY bundle_id, product_id`
+    ).bind(salesCutoffMs)
   );
 
   // The sticker price of each plan, for the panel above to show beside the
@@ -859,7 +929,7 @@ async function handleStats(env) {
         name: appName(id),
         paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
         mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
-        unlock_owners: 0, unlock_gross_usd: 0, plans: [],
+        unlock_owners: 0, unlock_gross_usd: 0, unlock_proceeds_usd: 0, plans: [],
       };
     }
     const s = subscribers[id];
@@ -894,7 +964,7 @@ async function handleStats(env) {
         name: appName(id),
         paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
         mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
-        unlock_owners: 0, unlock_gross_usd: 0, plans: [],
+        unlock_owners: 0, unlock_gross_usd: 0, unlock_proceeds_usd: 0, plans: [],
       };
     }
     const s = subscribers[id];
@@ -906,12 +976,16 @@ async function handleStats(env) {
       owners: r.owners || 0,
       offer_code: r.offer_code || 0,
       gross_usd: (r.gross_millis || 0) / 1000,
+      // Apple's actual post-commission figure for everything the sales reports
+      // cover, so this is not gross_usd × 0.85 and should not be re-derived.
+      proceeds_usd: (r.proceeds_millis || 0) / 1000,
       unknown_fx: r.unknown_fx || 0,
       list_usd: price.list_millis != null ? price.list_millis / 1000 : null,
       period_days: null,
     });
     s.unlock_owners += r.owners || 0;
     s.unlock_gross_usd += (r.gross_millis || 0) / 1000;
+    s.unlock_proceeds_usd += (r.proceeds_millis || 0) / 1000;
     s.unknown_fx += r.unknown_fx || 0;
   }
 
@@ -1185,6 +1259,67 @@ async function handleBackfill(request, env) {
   return json({ received: payloads.length, stored, duplicates: statements.length - stored, failed });
 }
 
+const SALES_COLUMNS = [
+  "report_date", "bundle_id", "sku", "title", "product_type", "units",
+  "proceeds_per_unit", "proceeds_currency", "customer_price", "customer_currency",
+  "country_code", "apple_identifier", "parent_identifier", "promo_code",
+  "order_type", "subscription", "period", "device", "version",
+  "begin_date", "end_date",
+];
+
+/**
+ * POST /api/sales-import — store one day of Apple's Summary Sales report.
+ *
+ * Body: { reportDate: 'YYYY-MM-DD', rows: [...] }, where each row already
+ * carries the column names above. The parsing lives in the script rather than
+ * here because the report is a tab-separated blob inside a gzip, and the
+ * Worker has no business unpacking that on the hot path.
+ *
+ * The day is REPLACED, not merged: Apple restates recent days (a refund lands
+ * against the original sale's date), so an append-only import would
+ * accumulate stale copies. Delete-then-insert makes re-running any day safe
+ * and makes the import idempotent, which is what lets the script skip days it
+ * has already done without tracking anything itself.
+ */
+async function handleSalesImport(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Body must be JSON" }, 400);
+  }
+
+  const reportDate = String(body.reportDate || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
+    return json({ error: "reportDate must be YYYY-MM-DD" }, 400);
+  }
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (rows.length > 5000) {
+    return json({ error: "too many rows for one day" }, 400);
+  }
+
+  const placeholders = SALES_COLUMNS.map(() => "?").join(", ");
+  const insert = env.DB.prepare(
+    `INSERT INTO sales (${SALES_COLUMNS.join(", ")}) VALUES (${placeholders})`
+  );
+
+  const statements = [
+    env.DB.prepare("DELETE FROM sales WHERE report_date = ?").bind(reportDate),
+    ...rows.map((row) =>
+      insert.bind(...SALES_COLUMNS.map((c) => (c === "report_date" ? reportDate : row[c] ?? null)))
+    ),
+    env.DB.prepare(
+      `INSERT INTO sales_import_log (report_date, imported_at, row_count)
+       VALUES (?, ?, ?)
+       ON CONFLICT(report_date) DO UPDATE SET imported_at = excluded.imported_at,
+                                              row_count = excluded.row_count`
+    ).bind(reportDate, Date.now(), rows.length),
+  ];
+
+  await env.DB.batch(statements);
+  return json({ report_date: reportDate, stored: rows.length });
+}
+
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -1212,6 +1347,25 @@ export default {
         return json({ error: "Unauthorized" }, 401);
       }
       return handleBackfill(request, env);
+    }
+
+    // Sales-report import, same arrangement and same secret as backfill: both
+    // are script-driven writes of historical revenue data from this machine.
+    if (pathname === "/api/sales-import") {
+      if (!isAuthorized(request, env)) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      if (request.method === "POST") return handleSalesImport(request, env);
+      // GET returns the days already imported, so the script can resume
+      // without keeping state of its own. Apple's rate limit, not our
+      // bandwidth, is the scarce resource in this loop.
+      if (request.method === "GET") {
+        const { results } = await env.DB.prepare(
+          "SELECT report_date, row_count FROM sales_import_log ORDER BY report_date"
+        ).all();
+        return json({ days: results || [] });
+      }
+      return json({ error: "Method Not Allowed" }, 405);
     }
 
     // The analyst agent's read-only window onto D1, for the same reason

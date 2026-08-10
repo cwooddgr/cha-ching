@@ -1,5 +1,69 @@
 # cha-ching — notes
 
+## Sales reports imported; lifetime totals now come from Apple, not from us
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-10
+> **Status:** decided-by-user (Charlie asked for pre-notification sales history and chose "authoritative for units + revenue" over gap-fill)
+
+Charlie asked for the sales data older than the 180-day notification window so
+lifetime totals would be accurate, and supplied a new App Store Connect **Team
+key** (Finance role) for it. The existing `.p8` could not do this job: Apple
+restricts In-App Purchase keys to the App Store Server API, and the Sales and
+Finance endpoints additionally reject Individual keys.
+
+**The history is shallower than expected, which made this easier.** Apple
+returns NOT_FOUND for the 2024 and 2025 yearly reports: DGR Labs' first revenue
+of any kind was **2026-02**. All of it therefore sits inside the one-year daily
+retention window (verified: `2026-02-15` returns data, `2025-08-09` returns
+`410 GONE`), so no yearly/monthly stitching was needed — 183 days of daily
+Summary Sales reports, 4,973 rows, cover the entire business.
+
+**What the gap actually was**, once imported:
+
+| | notifications | sales reports |
+|---|---|---|
+| CD Wally unlocks | 23 / $465.56 gross | **31 / $664.73** |
+| Countdowns unlocks | 0 | **4 / $24.14** |
+| Overflight lifetime | 31 / $2,237.41 | 30 / $2,167.42 |
+
+The Overflight row is the reassuring one: the single-unit difference is a
+$69.99 purchase made *today*, and Apple's newest daily report is yesterday.
+Where both sources are complete they agree to the cent, which is what made it
+safe to treat the reports as authoritative.
+
+**Design.** New `sales` table, one row per report line, plus `sales_import_log`
+as the watermark. `/api/stats`'s lifetime-unlocks query now reads from `sales`
+through the watermark and from `notifications` only after it — disjoint
+stretches of time, so the union cannot double-count, and a sale made today
+still reaches the dashboard immediately. The boundary is computed with `Intl`
+against `America/Los_Angeles` rather than a hardcoded offset, because Apple
+cuts its reports on Pacific time and that offset moves twice a year.
+
+I kept rolling-window flow stats on `notifications`: they are about recent
+activity, where notifications are complete and live, and the reports' one-day
+lag would only blur them. `sales` owns units and revenue; `notifications` still
+owns subscriber state, MRR and trial conversion, which aggregates cannot
+answer at all — there are no transaction ids in a sales report.
+
+The panel now shows Apple's real post-commission proceeds beside gross, so for
+unlocks the 85% small-business estimate is gone. I also relabelled the unlock
+rows' "codes" to "free": the reports lump offer codes together with press
+copies, Friends-and-Family and other comps, and "codes" would have been too
+narrow a word for what the number counts.
+
+**Finding, unresolved: Countdowns sends us no notifications at all.** It has
+real paid sales in the reports — including two in June 2026, well inside the
+backfill window — and zero rows in `notifications`. Its App Store Server
+Notifications V2 URL is almost certainly unset in App Store Connect. Charlie
+chose to note it rather than fix it in this session. Until it is fixed, every
+Countdowns figure has to come from `sales`, and no Countdowns subscription
+state exists to report.
+
+Sales reports also cover **Flip Flap** and **Bezelbub**, which cha-ching has
+never tracked, and carry free-download counts for everything — install volume
+we have never had. Both left alone as out of scope.
+
 ## RESOLVED: Family Sharing copies were counted as revenue
 
 > **Author:** Claude Code (coder)

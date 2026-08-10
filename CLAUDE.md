@@ -71,6 +71,27 @@ TABLE notifications (
 )
 
 TABLE fx_rates (currency TEXT PRIMARY KEY, usd_rate REAL)  -- static, approximate
+
+TABLE sales (                     -- Apple's DAILY Summary Sales reports
+  report_date TEXT,               -- 'YYYY-MM-DD', Apple's PACIFIC-TIME day
+  bundle_id TEXT,                 -- mapped from sku; NULL if unrecognised
+  sku TEXT,                       -- the app's SKU, or the IAP's own
+  product_type TEXT,              -- 'IA%' = the IAP/subscription rows
+  units INTEGER,                  -- NEGATIVE on a refund
+  proceeds_per_unit REAL,         -- Apple's ACTUAL post-commission figure, PER UNIT
+  proceeds_currency TEXT,
+  customer_price REAL,            -- per unit, gross, in customer_currency
+  customer_currency TEXT,
+  country_code TEXT,              -- alpha-2 (notifications.storefront is alpha-3)
+  promo_code TEXT,                -- 'FREE' on a trial, else a code
+  order_type TEXT,                -- 'Free Trial Intro Offer', an offer-code name, …
+  subscription TEXT,              -- 'New' | 'Renewal'
+  period TEXT,                    -- '7 Days' | '1 Month' | '1 Year'; NULL = one-time
+  title, apple_identifier, parent_identifier, device, version,
+  begin_date, end_date
+)
+
+TABLE sales_import_log (report_date TEXT PRIMARY KEY, imported_at INTEGER, row_count INTEGER)
 ```
 
 **Always filter to `environment = 'Production'`** unless the question is
@@ -128,13 +149,18 @@ the headcount and exclude them from any forward-looking run rate.
 This is **state, not a window** — "who is subscribed right now" must not move
 when the time window changes.
 
-**Lifetime unlocks are owners, not subscribers.** `ONE_TIME_CHARGE` with no
-`expires_date` — Overflight's `lifetime.v2` ($69.99) and CD Wally's wallets.
-They never renew and contribute **no MRR**; never divide one over an assumed
-lifespan to manufacture one. Count them separately, and subtract refunds: a
-refund here removes the entitlement, so an owner count must drop with it
-(unless a later `REFUND_REVERSED` restores it). Every other query on this page
-excludes them for free, since they have no `expires_date` to be active within.
+**Lifetime unlocks are owners, not subscribers.** Overflight's `lifetime.v2`
+($69.99) and CD Wally's wallets. They never renew and contribute **no MRR**;
+never divide one over an assumed lifespan to manufacture one. Count them
+separately.
+
+⚠️ **Count unlocks from `sales`, not from `notifications`.** Notification
+history reaches back only 180 days, which hides 8 of CD Wally's unlocks and
+**all** of Countdowns' behind the cliff. In `sales` they are
+`product_type LIKE 'IA%' AND period IS NULL`; refunds are negative units, so
+`SUM(units)` nets them out on its own. `notifications` still covers the day or
+so since Apple's newest report — that seam is what `/api/stats` splices, and a
+question about "today" has to come from `notifications` alone.
 
 **MRR** — each paying subscriber normalised to a month from **their own**
 period length, never from the product id: `price * usd_rate * 30.44 /
@@ -171,9 +197,47 @@ indicator of where the rate is heading; report it as that.
 ~8 hours BEFORE the trial's `expires_date`. Billing retry
 (`DID_FAIL_TO_RENEW`) is the rare exception where a verdict lands late.
 
-**History depth**: data goes back ~180 days before 2026-08 (Apple's
-notification-history limit). Older CD Wally / Countdowns activity is simply not
-here — say that rather than reporting a trend that starts at the cliff.
+**History depth**: `notifications` goes back ~180 days before 2026-08 (Apple's
+notification-history limit) — don't report a trend that starts at that cliff.
+`sales` has no such cliff for our purposes: DGR Labs' **first revenue of any
+kind was 2026-02**, and Apple returns NOT_FOUND for every earlier report, so
+the sales table holds the complete history of the business.
+
+## The sales table — counting rules
+
+Imported by `scripts/sales-import.mjs`; re-runnable, and each day is replaced
+rather than appended so restatements land cleanly.
+
+- **Money rows are `product_type LIKE 'IA%'`.** Everything else is app
+  downloads, updates and re-downloads: real unit counts, but never revenue.
+  (This is also the only install-volume data we have.)
+- **`proceeds_per_unit` is PER UNIT.** Multiply by `units`. It is Apple's
+  actual post-commission figure — **do not** apply the 85% small-business
+  factor to it, that is already done. `customer_price` is the gross the
+  customer paid; the 85% estimate applies only to `notifications`.
+- **Paid vs free**: `proceeds_per_unit > 0` is a real sale. Zero-proceeds IAP
+  rows are free trials (`order_type = 'Free Trial Intro Offer'`), comps
+  (`Press`, `Friends and Family`, `thankyou`, `lifetime-free`) and 100% offer
+  codes. Two currency joins, not one: `customer_currency` for gross,
+  `proceeds_currency` for net.
+- **Refunds are negative `units`** against the original sale's date. Never
+  filter them out — summing is what nets them.
+- **`report_date` is Pacific Time; `signed_date` is UTC.** Never join the two
+  tables on a date, and never assume a day lines up across them.
+- **The reports lag a day.** The newest is yesterday PT; `sales_import_log`
+  holds the watermark. Today's activity exists only in `notifications`.
+- **There are no transaction ids.** Subscriber state, MRR and trial conversion
+  cannot be answered from here — those stay with `notifications`, which is why
+  both tables exist.
+- **It covers the whole account**, including Flip Flap and Bezelbub, which
+  send us no notifications at all. Filter on `bundle_id` unless the question
+  is genuinely account-wide.
+
+⚠️ **Countdowns sends us no notifications** (found 2026-08-10): it has real
+sales in `sales` and zero rows in `notifications`, so its V2 notification URL
+is almost certainly unset in App Store Connect. Until that is fixed, any
+Countdowns answer must come from `sales`, and no Countdowns subscription state
+exists to report.
 
 **Time**: use SQLite date functions against ms epochs, e.g.
 `signed_date >= unixepoch('now', '-7 days') * 1000`.
@@ -189,6 +253,11 @@ being asked for.
 
 - `src/index.js` — the whole Worker: ingest, Slack, stats, the analyst
   endpoints. `public/` is the dashboard (no build step).
+- `scripts/sales-import.mjs` — pulls Apple's daily sales reports into `sales`.
+  Needs an App Store Connect **Team key** with the Finance role (NOT the
+  In-App Purchase key `backfill.mjs` uses — Apple restricts that one to the
+  App Store Server API). Both `.p8` files and `.backfill.env` are gitignored.
+  Re-run any time; it skips days already imported.
 - Deploy: `npx wrangler deploy`. Secrets: `SLACK_WEBHOOK_URL`,
   `DASHBOARD_SECRET`, `CHAT_TOKEN`.
 - The console's chat proxies to `agent-bridge` on bigiron; there is no
