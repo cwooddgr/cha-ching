@@ -921,8 +921,16 @@ async function handleStats(env) {
   const priceByPlan = Object.fromEntries(
     (byKey.plan_price || []).map((r) => [r.product_id, r])
   );
+  // Apps deliberately left off the CUSTOMER BASE panel. Countdowns only
+  // appeared there at all once the sales reports landed — it sends us no
+  // notifications — and four lifetime unlocks isn't a customer base worth a
+  // tile (Charlie's call, 2026-08-10). The rows stay in `sales`, so the
+  // analyst can still count them; they just don't get a card.
+  const CUSTOMER_BASE_EXCLUDE = new Set(["co.dgrlabs.countdowns"]);
+
   const subscribers = {};
   for (const r of byKey.subs || []) {
+    if (CUSTOMER_BASE_EXCLUDE.has(r.bundle_id)) continue;
     const id = r.bundle_id || "unknown";
     if (!subscribers[id]) {
       subscribers[id] = {
@@ -958,6 +966,7 @@ async function handleStats(env) {
   // gets an entry of its own here — this panel is the customer base, not the
   // subscriber base, so a product with no subscriptions still has one.
   for (const r of byKey.unlocks || []) {
+    if (CUSTOMER_BASE_EXCLUDE.has(r.bundle_id)) continue;
     const id = r.bundle_id || "unknown";
     if (!subscribers[id]) {
       subscribers[id] = {

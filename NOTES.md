@@ -52,13 +52,29 @@ rows' "codes" to "free": the reports lump offer codes together with press
 copies, Friends-and-Family and other comps, and "codes" would have been too
 narrow a word for what the number counts.
 
-**Finding, unresolved: Countdowns sends us no notifications at all.** It has
-real paid sales in the reports — including two in June 2026, well inside the
-backfill window — and zero rows in `notifications`. Its App Store Server
-Notifications V2 URL is almost certainly unset in App Store Connect. Charlie
-chose to note it rather than fix it in this session. Until it is fixed, every
-Countdowns figure has to come from `sales`, and no Countdowns subscription
-state exists to report.
+**Finding, closed as won't-fix: Countdowns sends us no notifications at all.**
+It has real paid sales in the reports — including two in June 2026, well inside
+the backfill window — and zero rows in `notifications`, so its App Store Server
+Notifications V2 URL is almost certainly unset. Charlie's call: the revenue is
+trivial (4 lifetime unlocks, $24.14) and not worth wiring up, and Countdowns
+should come off the CUSTOMER BASE panel entirely. Done via
+`CUSTOMER_BASE_EXCLUDE` in `src/index.js` — the sales rows stay in the table
+and remain queryable, they just don't get a tile. **This is an accepted state,
+not an open bug**; CLAUDE.md says so too, so a future session doesn't rediscover
+it and file it as breakage.
+
+**Scheduling** (Charlie asked for it, same session): a launchd agent runs the
+importer daily at 10:00 local — 09:00 Pacific, after Apple's "generally
+available by 8 a.m. PT". Verified end to end via `launchctl kickstart`: exit 0,
+correctly found all 190 days already imported and fetched nothing.
+
+I deliberately did **not** put this on a Cloudflare cron trigger. That would
+mean moving the App Store Connect Finance-role key — which can read every sales
+and financial report for the account — into Worker secrets, reversing this
+project's standing choice to keep the `.p8` on Charlie's machine. The importer
+skips days it already has and Apple retains daily reports for a year, so a run
+missed while the Mac is asleep costs nothing. Robustness we don't need wasn't
+worth the credential exposure.
 
 Sales reports also cover **Flip Flap** and **Bezelbub**, which cha-ching has
 never tracked, and carry free-download counts for everything — install volume

@@ -233,11 +233,14 @@ rather than appended so restatements land cleanly.
   send us no notifications at all. Filter on `bundle_id` unless the question
   is genuinely account-wide.
 
-⚠️ **Countdowns sends us no notifications** (found 2026-08-10): it has real
-sales in `sales` and zero rows in `notifications`, so its V2 notification URL
-is almost certainly unset in App Store Connect. Until that is fixed, any
-Countdowns answer must come from `sales`, and no Countdowns subscription state
-exists to report.
+**Countdowns sends us no notifications, and that is fine** (found 2026-08-10;
+Charlie's call the same day). Its V2 notification URL is almost certainly unset
+in App Store Connect, but at four lifetime unlocks the revenue isn't worth
+wiring up, so this is a known accepted state — **not a bug to re-report every
+session**. Consequences: any Countdowns figure comes from `sales`, no
+Countdowns subscription state exists, and it is deliberately excluded from the
+CUSTOMER BASE panel (`CUSTOMER_BASE_EXCLUDE` in `src/index.js`) while staying
+fully queryable in `sales`.
 
 **Time**: use SQLite date functions against ms epochs, e.g.
 `signed_date >= unixepoch('now', '-7 days') * 1000`.
@@ -257,7 +260,11 @@ being asked for.
   Needs an App Store Connect **Team key** with the Finance role (NOT the
   In-App Purchase key `backfill.mjs` uses — Apple restricts that one to the
   App Store Server API). Both `.p8` files and `.backfill.env` are gitignored.
-  Re-run any time; it skips days already imported.
+  Re-run any time; it skips days already imported. Runs daily at 10:00 local
+  via the launchd agent in `scripts/co.dgrlabs.cha-ching.sales-import.plist`
+  (install instructions in the file; log at
+  `~/Library/Logs/cha-ching-sales-import.log`). A run missed while the Mac is
+  asleep costs nothing — the next one backfills it.
 - Deploy: `npx wrangler deploy`. Secrets: `SLACK_WEBHOOK_URL`,
   `DASHBOARD_SECRET`, `CHAT_TOKEN`.
 - The console's chat proxies to `agent-bridge` on bigiron; there is no

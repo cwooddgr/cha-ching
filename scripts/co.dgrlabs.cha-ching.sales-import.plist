@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Daily import of Apple's Summary Sales reports into cha-ching's D1.
+
+  Install:
+    cp scripts/co.dgrlabs.cha-ching.sales-import.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/co.dgrlabs.cha-ching.sales-import.plist
+  Run it now:
+    launchctl kickstart -k gui/$(id -u)/co.dgrlabs.cha-ching.sales-import
+  Log: ~/Library/Logs/cha-ching-sales-import.log
+
+  WHY IT RUNS HERE AND NOT IN THE CLOUD
+  The App Store Connect key is a Finance-role credential that can read every
+  sales and financial report for the account, and this project has kept it on
+  Charlie's machine from the start (see backfill.mjs). Putting it in Worker
+  secrets to get a cron trigger would trade that for convenience we don't
+  need: the importer skips days already imported, so a run missed while the
+  Mac is asleep is picked up by the next one, and Apple keeps daily reports
+  for a year. Nothing is lost by this being a laptop job.
+
+  10:00 local is 09:00 Pacific, comfortably after Apple's "generally available
+  by 8 a.m. PT". launchd runs a missed calendar job once on wake.
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>co.dgrlabs.cha-ching.sales-import</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/bin/node</string>
+		<string>scripts/sales-import.mjs</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/Users/cwood/projects/cha-ching</string>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Hour</key>
+		<integer>10</integer>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>StandardOutPath</key>
+	<string>/Users/cwood/Library/Logs/cha-ching-sales-import.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/cwood/Library/Logs/cha-ching-sales-import.log</string>
+</dict>
+</plist>
