@@ -608,11 +608,11 @@ body {
   width: 640px; height: 200px; mix-blend-mode: screen;
   pointer-events: none; z-index: 2;
   background: radial-gradient(closest-side, rgba(53, 224, 255, 0.3), transparent 72%);
-  animation: flare-breathe 11s ease-in-out infinite alternate;
+  animation: flare-breathe 4s ease-in-out infinite alternate;
 }
 @keyframes flare-breathe {
-  from { opacity: 0.45; transform: translateX(0) scaleX(1); }
-  to   { opacity: 0.95; transform: translateX(-70px) scaleX(1.18); }
+  from { opacity: 0.2; transform: translateX(0) scaleX(1); }
+  to   { opacity: 1; transform: translateX(-70px) scaleX(1.18); }
 }
 
 /* Traveling anamorphic streak — boot, revenue hits, and the odd stray glint. */
