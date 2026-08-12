@@ -71,14 +71,13 @@
     setTimeout(() => f.remove(), 2000); // belt and braces
   }
 
-  // A faint glint wandering by every so often keeps the frame alive without
-  // demanding attention.
+  // A glint wandering by every so often keeps the frame alive.
   function scheduleGlint() {
     if (reduced) return;
     setTimeout(() => {
-      if (document.visibilityState === "visible") sweepFlare(0.28);
+      if (document.visibilityState === "visible") sweepFlare(0.6);
       scheduleGlint();
-    }, 34000 + Math.random() * 32000);
+    }, 14000 + Math.random() * 14000);
   }
   scheduleGlint();
 
@@ -191,8 +190,8 @@
   // ── screen quake ──────────────────────────────────────────────────────
   // The stamp weighs a metric ton, so the console jolts when it lands.
   // WAAPI rather than a CSS class: `animation` is one property, so a class
-  // would knock out the background layers' own animations (noise-jitter,
-  // grid-pan, scan) for the duration. composite:"add" also keeps any
+  // would knock out the background layers' own animations (grid-pan, scan)
+  // for the duration. composite:"add" also keeps any
   // existing transforms intact. Everything but the stamp shakes — shaking
   // <body> would shake the stamp along with the surface it just hit.
 
@@ -298,29 +297,29 @@
       cvs.width = Math.round(w * dpr);
       cvs.height = Math.round(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const n = w < 700 ? 26 : 60;
+      const n = w < 700 ? 36 : 85;
       motes = Array.from({ length: n }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
-        r: 0.4 + Math.random() * 1.3,
-        vy: -(4 + Math.random() * 14),
-        vx: (Math.random() - 0.5) * 4,
-        a: 0.08 + Math.random() * 0.3,
+        r: 1 + Math.random() * 2,
+        vy: -(6 + Math.random() * 18),
+        vx: (Math.random() - 0.5) * 5,
+        a: 0.25 + Math.random() * 0.45,
         tw: Math.random() * Math.PI * 2,
       }));
     }
 
     function spawnStreak() {
       streaks.push({
-        x: -140,
+        x: -300,
         y: Math.random() * h * 0.85,
         v: 900 + Math.random() * 900,
-        len: 90 + Math.random() * 120,
-        a: 0.25 + Math.random() * 0.3,
+        len: 160 + Math.random() * 180,
+        a: 0.55 + Math.random() * 0.35,
       });
-      streakTimer = 5000 + Math.random() * 9000;
+      streakTimer = 2500 + Math.random() * 4500;
     }
-    let streakTimer = 4000;
+    let streakTimer = 2000;
 
     function frame(now) {
       if (!running) return;
@@ -342,14 +341,14 @@
 
       streakTimer -= dt * 1000;
       if (streakTimer <= 0) spawnStreak();
-      streaks = streaks.filter((s) => s.x < w + 200);
+      streaks = streaks.filter((s) => s.x - s.len < w);
       for (const s of streaks) {
         s.x += s.v * dt;
         const g = ctx.createLinearGradient(s.x - s.len, s.y, s.x, s.y);
         g.addColorStop(0, "rgba(53,224,255,0)");
         g.addColorStop(1, `rgba(53,224,255,${s.a})`);
         ctx.strokeStyle = g;
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(s.x - s.len, s.y);
         ctx.lineTo(s.x, s.y);

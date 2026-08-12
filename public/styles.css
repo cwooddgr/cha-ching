@@ -49,10 +49,8 @@ body {
   animation: grid-pan 10s linear infinite;
 }
 /* Straight down, ~4.4px/s — one cell every 10s. Vertical rather than the
-   diagonal drift this used to have, and downward rather than up, so it runs
-   WITH the perspective floor below: the same world coming at the viewer, far
-   field slow and foreground fast. A diagonal fights that, and reads as a
-   texture sliding rather than a space moving.
+   diagonal drift this used to have: a diagonal reads as a texture sliding
+   rather than a space moving.
    Speed is set by what the eye can actually resolve, not by taste. The old
    90s/88px worked out to ~1px/s, which is below the threshold for drift this
    faint to register at all — it read as a still image. This is the slowest
@@ -65,23 +63,6 @@ body {
    must not travel. */
 @keyframes grid-pan {
   to { background-position: 0 44px, 0 44px, 0 0; }
-}
-/* Perspective floor racing toward the horizon at the bottom of the frame. */
-#grid-bg::after {
-  content: ""; position: absolute; left: -30%; right: -30%; bottom: 0; height: 40vh;
-  background-image:
-    linear-gradient(rgba(53, 224, 255, 0.16) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(53, 224, 255, 0.10) 1px, transparent 1px);
-  background-size: 100% 48px, 72px 100%;
-  transform: perspective(420px) rotateX(62deg);
-  transform-origin: 50% 100%;
-  animation: floor-fly 3.2s linear infinite;
-  -webkit-mask-image: linear-gradient(180deg, transparent, rgba(0,0,0,0.6) 55%, black);
-  mask-image: linear-gradient(180deg, transparent, rgba(0,0,0,0.6) 55%, black);
-  opacity: 0.35;
-}
-@keyframes floor-fly {
-  to { background-position: 0 48px, 0 0; }
 }
 
 #scanline {
@@ -98,12 +79,12 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #scanline, #noise, #flare-layer, #particles, #reticle, .rail, .runner,
+  #scanline, #flare-layer, #particles, #reticle, .rail, .runner,
   .gauge-sweep, .wordmark::before, .wordmark::after { display: none; }
-  /* Stop the two background pans by name. The blanket rule below only shortens
+  /* Stop the background pan by name. The blanket rule below only shortens
      durations, which would turn a surviving infinite loop into a 1ms strobe —
      the opposite of what was asked for. */
-  #grid-bg, #grid-bg::after { animation: none; }
+  #grid-bg { animation: none; }
   * { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
 }
 
@@ -610,25 +591,6 @@ body {
 
 #particles { position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 
-#vignette {
-  position: fixed; inset: 0; z-index: 55; pointer-events: none;
-  background: radial-gradient(ellipse 85% 75% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.42) 100%);
-}
-
-#noise {
-  position: fixed; inset: -70px; z-index: 56; pointer-events: none;
-  opacity: 0.05; mix-blend-mode: overlay;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-  animation: noise-jitter 0.7s steps(4) infinite;
-}
-@keyframes noise-jitter {
-  0%   { transform: translate(0, 0); }
-  25%  { transform: translate(-24px, 14px); }
-  50%  { transform: translate(18px, -20px); }
-  75%  { transform: translate(-10px, -8px); }
-  100% { transform: translate(0, 0); }
-}
-
 /* ── lens flares ────────────────────────────────────────────────────── */
 
 #flare-layer {
@@ -640,12 +602,12 @@ body {
 #flare-ambient {
   position: absolute; top: -30px; right: 6%;
   width: 640px; height: 200px; mix-blend-mode: screen;
-  background: radial-gradient(closest-side, rgba(53, 224, 255, 0.14), transparent 72%);
+  background: radial-gradient(closest-side, rgba(53, 224, 255, 0.3), transparent 72%);
   animation: flare-breathe 11s ease-in-out infinite alternate;
 }
 #flare-ambient::after {
   content: ""; position: absolute; top: 50%; left: -18%; right: -18%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(150, 240, 255, 0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(150, 240, 255, 0.85), transparent);
   filter: blur(1px);
 }
 @keyframes flare-breathe {
@@ -659,13 +621,13 @@ body {
   transform: translateX(-140%);
   mix-blend-mode: screen; will-change: transform;
   background:
-    radial-gradient(ellipse 42% 7% at 50% 38%, rgba(255, 255, 255, 0.8), rgba(53, 224, 255, 0.35) 45%, transparent 72%),
-    linear-gradient(90deg, transparent, rgba(53, 224, 255, 0.07), transparent);
+    radial-gradient(ellipse 42% 7% at 50% 38%, rgba(255, 255, 255, 0.95), rgba(53, 224, 255, 0.55) 45%, transparent 72%),
+    linear-gradient(90deg, transparent, rgba(53, 224, 255, 0.16), transparent);
   animation: flare-travel 1.15s cubic-bezier(0.3, 0.6, 0.25, 1) forwards;
 }
 .flare-sweep::before {
   content: ""; position: absolute; top: 38%; left: -160%; right: -160%; height: 2px;
-  background: linear-gradient(90deg, transparent 5%, rgba(150, 240, 255, 0.7), transparent 95%);
+  background: linear-gradient(90deg, transparent 5%, rgba(150, 240, 255, 0.95), transparent 95%);
   filter: blur(1px);
 }
 .flare-sweep::after {
