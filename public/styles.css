@@ -599,21 +599,16 @@ body {
   pointer-events: none; overflow: hidden;
 }
 
-/* Standing anamorphic glint on the masthead, slowly breathing. Lives INSIDE
-   the masthead (not the fixed flare layer) so it scrolls away with it —
-   viewport-fixed, the bright line reads as a bar stuck over whatever panel
-   scrolls underneath. pointer-events off so it never blocks the SND button. */
+/* Standing glow on the masthead, slowly breathing. Lives INSIDE the masthead
+   (not the fixed flare layer) so it scrolls away with it. Just the soft glow —
+   it used to carry an anamorphic line (an ::after), which read as a stray bar.
+   pointer-events off so it never blocks the SND button. */
 #flare-ambient {
   position: absolute; top: -60px; right: 4%;
   width: 640px; height: 200px; mix-blend-mode: screen;
   pointer-events: none; z-index: 2;
   background: radial-gradient(closest-side, rgba(53, 224, 255, 0.3), transparent 72%);
   animation: flare-breathe 11s ease-in-out infinite alternate;
-}
-#flare-ambient::after {
-  content: ""; position: absolute; top: 50%; left: -18%; right: -18%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(150, 240, 255, 0.85), transparent);
-  filter: blur(1px);
 }
 @keyframes flare-breathe {
   from { opacity: 0.45; transform: translateX(0) scaleX(1); }
