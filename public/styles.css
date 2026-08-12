@@ -611,7 +611,7 @@ body {
   animation: flare-breathe 4s ease-in-out infinite alternate;
 }
 @keyframes flare-breathe {
-  from { opacity: 0.2; transform: translateX(0) scaleX(1); }
+  from { opacity: 0.5; transform: translateX(0) scaleX(1); }
   to   { opacity: 1; transform: translateX(-70px) scaleX(1.18); }
 }
 
