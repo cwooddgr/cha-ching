@@ -79,7 +79,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #scanline, #flare-layer, #particles, #reticle, .rail, .runner,
+  #scanline, #flare-layer, #flare-ambient, #particles, #reticle, .rail, .runner,
   .gauge-sweep, .wordmark::before, .wordmark::after { display: none; }
   /* Stop the background pan by name. The blanket rule below only shortens
      durations, which would turn a surviving infinite loop into a 1ms strobe —
@@ -153,6 +153,7 @@ body {
   display: flex; justify-content: space-between; align-items: center; gap: 16px;
   border-bottom: 1px solid rgba(53,224,255,0.2);
   padding-bottom: 12px;
+  position: relative; /* anchors #flare-ambient */
 }
 .masthead-left { display: flex; align-items: center; gap: 14px; }
 .sigil svg { width: 44px; height: 44px; display: block; }
@@ -598,10 +599,14 @@ body {
   pointer-events: none; overflow: hidden;
 }
 
-/* Standing anamorphic glint up in the masthead region, slowly breathing. */
+/* Standing anamorphic glint on the masthead, slowly breathing. Lives INSIDE
+   the masthead (not the fixed flare layer) so it scrolls away with it —
+   viewport-fixed, the bright line reads as a bar stuck over whatever panel
+   scrolls underneath. pointer-events off so it never blocks the SND button. */
 #flare-ambient {
-  position: absolute; top: -30px; right: 6%;
+  position: absolute; top: -60px; right: 4%;
   width: 640px; height: 200px; mix-blend-mode: screen;
+  pointer-events: none; z-index: 2;
   background: radial-gradient(closest-side, rgba(53, 224, 255, 0.3), transparent 72%);
   animation: flare-breathe 11s ease-in-out infinite alternate;
 }
