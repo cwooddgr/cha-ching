@@ -355,7 +355,7 @@ The dashboard now lives at **https://cha-ching.dgrlabs.co**, behind the DGR
 Labs Zero Trust org (`dgrlabs.cloudflareaccess.com`, one-time PIN to
 charlie.wood@gmail.com). Access app "Cha-Ching Dashboard"
 (8031fe54-c1f6-4a0d-8166-f933a9a43a9d), policy de0a3cc1…, created via the
-`CF_ACCESS_TOKEN` API token that lives in the netbot repo's `.env`.
+`CF_ACCESS_TOKEN` API token that lives in the house repo's `.env`.
 
 Worker-side: dashboard assets and `/api/login|stats|pulse|chat` are refused
 (404) off the custom hostname, and the custom hostname fails closed (503)
@@ -432,7 +432,7 @@ spent through Claude Code's OAuth credential, which is a file on a machine, so
 the model call cannot happen at the edge.
 
 It now proxies to **`agent-bridge`** on bigiron (the always-on Debian box at
-the ranch — see `netbot/bin/agent-bridge`), which runs Claude Code headless on
+the ranch — see `house/bin/agent-bridge`), which runs Claude Code headless on
 Charlie's Max subscription. Reached over a Cloudflare tunnel; `/api/chat` is a
 thin passthrough that adds a bearer token and streams the SSE back untouched.
 The same daemon serves the house dashboard's chat panel on a separate profile.

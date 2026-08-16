@@ -3,7 +3,7 @@
 Guidance for Claude Code working in this repo — and, just as importantly, the
 operating context for the **analyst agent** behind rev-9000.dgrlabs.co's
 ANALYST CONSOLE panel. That agent is Claude Code running on bigiron with this
-directory as its working directory (see `netbot/bin/agent-bridge`), so this
+directory as its working directory (see `house/bin/agent-bridge`), so this
 file *is* its system prompt in everything but name.
 
 These counting rules used to live in a `CHAT_SYSTEM` string inside
