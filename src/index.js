@@ -208,6 +208,113 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Revenue milestones — celebrate whole-$1,000 crossings (Charlie's ask,
+// 2026-08-20): whenever a revenue event pushes any dashboard window's gross
+// (24h / 7d / 30d / all-time, the hero figure) past a whole-thousands-of-
+// dollars line, post a celebration to Slack.
+//
+// Detection is stateless on purpose. At ingest we compute each window's gross
+// exactly the way /api/stats does, then subtract the new event's own USD
+// contribution to get the value the moment before it landed. A $1,000 boundary
+// between the two is a crossing. Because the sums are recomputed fresh against
+// the rolling window at that instant, decay is handled for free: if the 7-day
+// figure sagged below $2,000 last week and a sale pushes it back over,
+// that re-crossing celebrates again — which is the behavior asked for
+// ("any time we pass"), not just all-time highs.
+//
+// Only NEWLY STORED Production rows get here (Apple retries and backfill are
+// excluded at the call site), so a redelivered notification can't re-ring the
+// bell by being subtracted from a sum it is already part of.
+// ---------------------------------------------------------------------------
+
+const MILESTONE_STEP_USD = 1000;
+
+const MILESTONE_WINDOW_LABELS = { "24h": "24-hour", "7d": "7-day", "30d": "30-day", all: "All-time" };
+
+async function checkRevenueMilestones(env, notification, transaction) {
+  // Same qualification as the dashboard's revenue_usd: revenue event types,
+  // no free trials, no Family Sharing duplicates, and an actual price.
+  const key = eventKey(notification.notificationType, notification.subtype);
+  if (!REVENUE_EVENTS.has(key)) return;
+  if (!transaction || !(transaction.price > 0)) return;
+  if (transaction.offerDiscountType === "FREE_TRIAL") return;
+  if (transaction.inAppOwnershipType === "FAMILY_SHARED") return;
+
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const [fxRes, sumRes] = await env.DB.batch([
+    env.DB.prepare("SELECT usd_rate FROM fx_rates WHERE currency = ?").bind(
+      transaction.currency ?? ""
+    ),
+    // Mirrors handleStats' revenue_usd: the JOIN drops unknown currencies,
+    // matching the dashboard's "usd_rate IS NOT NULL" arm, and everything is
+    // in milliunits until the division below.
+    env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w24h,
+         SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w7d,
+         SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w30d,
+         SUM(price * usd_rate) AS wall
+       FROM notifications JOIN fx_rates USING (currency)
+       WHERE environment = 'Production'
+         AND price IS NOT NULL
+         AND (in_app_ownership_type IS NULL OR in_app_ownership_type != 'FAMILY_SHARED')
+         AND (offer_discount_type IS NULL OR offer_discount_type != 'FREE_TRIAL')
+         AND (notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
+              OR (notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
+                  AND subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))`
+    ).bind(now - day, now - 7 * day, now - 30 * day),
+  ]);
+
+  const usdRate = fxRes.results?.[0]?.usd_rate;
+  // No FX rate means this event contributed nothing to the USD sums (the JOIN
+  // excluded it), so it can't have moved any figure across a line.
+  if (usdRate == null) return;
+  const contributionUsd = (transaction.price * usdRate) / 1000;
+
+  const sums = sumRes.results?.[0] || {};
+  const crossings = [];
+  for (const [key2, col] of [["24h", "w24h"], ["7d", "w7d"], ["30d", "w30d"], ["all", "wall"]]) {
+    const after = (sums[col] || 0) / 1000;
+    const before = after - contributionUsd;
+    const line = Math.floor(after / MILESTONE_STEP_USD);
+    if (line > Math.floor(before / MILESTONE_STEP_USD)) {
+      crossings.push({
+        label: MILESTONE_WINDOW_LABELS[key2],
+        threshold: line * MILESTONE_STEP_USD,
+        after,
+      });
+    }
+  }
+  if (!crossings.length) return;
+
+  const money = (v, digits) =>
+    "$" + v.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const lines = crossings.map(
+    (c) => `${c.label} gross just passed *${money(c.threshold, 0)}* — now ${money(c.after, 2)} (est.)`
+  );
+  lines.push(`Rung by ${appName(transaction.bundleId)}. \u{1F514}`);
+
+  await postToSlack(env.SLACK_WEBHOOK_URL, {
+    attachments: [
+      {
+        color: "#ecb22e",
+        fallback: `Revenue milestone: ${crossings.map((c) => `${c.label} gross passed ${money(c.threshold, 0)}`).join("; ")}`,
+        blocks: [
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: `*\u{1F389} CHA-CHING — REVENUE MILESTONE \u{1F389}*\n${lines.join("\n")}`,
+            },
+          },
+        ],
+      },
+    ],
+  });
+}
+
 async function postToSlack(webhookUrl, message) {
   const resp = await fetch(webhookUrl, {
     method: "POST",
@@ -1237,8 +1344,13 @@ async function handleAppleIngest(request, env, ctx) {
     const { notification, transaction, renewalInfo } = decoded;
 
     // Persist everything — including sandbox and types we don't Slack.
+    // storedNew gates the milestone check below: INSERT OR IGNORE reports 0
+    // changes for a redelivered notification, whose money is already inside
+    // the window sums and must not be subtracted from them a second time.
+    let storedNew = false;
     try {
-      await persistStatement(env.DB, decoded).run();
+      const result = await persistStatement(env.DB, decoded).run();
+      storedNew = (result?.meta?.changes || 0) > 0;
     } catch (e) {
       console.error("Failed to persist notification:", e);
     }
@@ -1274,6 +1386,16 @@ async function handleAppleIngest(request, env, ctx) {
       await postToSlack(env.SLACK_WEBHOOK_URL, message);
     } catch (e) {
       console.error("Failed to post to Slack:", e);
+    }
+
+    // After the event's own message, so the milestone reads as a consequence
+    // of the sale above it. Failures here must never bounce Apple's delivery.
+    if (storedNew) {
+      try {
+        await checkRevenueMilestones(env, notification, transaction);
+      } catch (e) {
+        console.error("Milestone check failed:", e);
+      }
     }
   } catch (e) {
     console.error("Error processing notification:", e);

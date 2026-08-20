@@ -1,5 +1,34 @@
 # cha-ching — notes
 
+## Slack celebrations when a window's gross crosses a whole $1,000
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-20
+> **Status:** decided-by-user (Charlie asked for a celebratory notification any time we pass a whole-thousands-of-dollars gross threshold on any dashboard window; the detection design below is proposed-by-agent)
+
+Whenever a Production revenue event pushes any of the dashboard's four
+windows — 24h, 7d, 30d, all-time — past a whole-$1,000 line, the Worker posts
+a gold "🎉 CHA-CHING — REVENUE MILESTONE" message to the same Slack webhook the
+per-sale messages use, right after the sale's own message. The figure watched
+is exactly the dashboard hero (`windows[key].total.revenue_usd`): estimated
+gross from notifications, static FX, family-shared and free-trial rows
+excluded.
+
+Detection is stateless: at ingest we recompute each window's gross the way
+`/api/stats` does, subtract the new event's own USD contribution to get the
+before-value, and celebrate any $1,000 boundary between the two. I chose this
+over a high-water-mark table because it handles rolling-window decay for free
+— if the 7-day figure sags below a line and later re-crosses it, that
+celebrates again, which is the literal reading of "any time we pass". A big
+sale that jumps two lines celebrates once, at the higher line. Redelivered
+notifications can't re-ring the bell: the check only runs when `INSERT OR
+IGNORE` actually stored a new row. Backfill and sales-import paths never
+trigger it.
+
+At deploy time the windows stood at 24h $71 / 7d $233 / 30d $4,293 /
+all-time $4,738 — so the first bells to ring will likely be all-time $5,000
+(~$262 away) and 30d $5,000 (~$707 away).
+
 ## Dashboard renamed to rev-9000.dgrlabs.co
 
 > **Author:** Claude Code (coder)
