@@ -666,6 +666,16 @@ async function handleStats(env) {
   // Non-renewing products never appear here: they have no expires_date, so
   // Overflight's lifetime unlock and CD Wally's are excluded by construction
   // rather than by a hardcoded list.
+  //
+  // A subscriber in Apple's billing grace period is `retrying`: their period
+  // has ended, the charge failed, but Apple is still granting access while it
+  // retries the card. Their standing row is the DID_FAIL_TO_RENEW/GRACE_PERIOD
+  // (same expires_date as the period it ends, later signed_date), and the
+  // grace window lives only in the raw renewal info. A DID_RENEW with subtype
+  // BILLING_RECOVERY later outranks it on expires_date; GRACE_PERIOD_EXPIRED
+  // or EXPIRED/BILLING_RETRY outranks it on signed_date. Either way the state
+  // resolves on its own — there is no flag to clear. Retrying subscribers are
+  // neither paying nor trialing and carry no MRR: access without revenue.
   keys.push("subs");
   statements.push(
     env.DB.prepare(
@@ -673,6 +683,8 @@ async function handleStats(env) {
          SELECT n.bundle_id, n.product_id, n.currency, n.price,
                 n.expires_date, n.purchase_date, n.offer_discount_type,
                 n.offer_type, n.auto_renew_status,
+                CASE WHEN n.notification_type = 'DID_FAIL_TO_RENEW' AND n.subtype = 'GRACE_PERIOD'
+                     THEN json_extract(n.raw, '$.renewalInfo.gracePeriodExpiresDate') END AS grace_until,
                 ROW_NUMBER() OVER (PARTITION BY n.original_transaction_id
                                    ORDER BY n.expires_date DESC, n.signed_date DESC) AS rn
          FROM notifications n
@@ -685,15 +697,18 @@ async function handleStats(env) {
          SELECT bundle_id, product_id, currency, price, offer_type,
                 (auto_renew_status IS NULL OR auto_renew_status != 0) AS renewing,
                 (expires_date - purchase_date) / 86400000.0 AS period_days,
-                (price > 0 AND (offer_discount_type IS NULL
-                                OR offer_discount_type != 'FREE_TRIAL')) AS paid
-         FROM latest WHERE rn = 1 AND expires_date > ?
+                (expires_date <= ?) AS retrying,
+                (expires_date > ? AND price > 0
+                 AND (offer_discount_type IS NULL
+                      OR offer_discount_type != 'FREE_TRIAL')) AS paid
+         FROM latest WHERE rn = 1 AND (expires_date > ? OR grace_until > ?)
        )
        SELECT s.bundle_id, s.product_id,
               SUM(s.paid) AS paying,
               SUM(CASE WHEN s.paid AND s.offer_type = 3 THEN 1 ELSE 0 END) AS offer_code,
               SUM(CASE WHEN s.paid AND NOT s.renewing THEN 1 ELSE 0 END) AS lapsing,
-              SUM(CASE WHEN s.paid THEN 0 ELSE 1 END) AS trialing,
+              SUM(CASE WHEN s.paid OR s.retrying THEN 0 ELSE 1 END) AS trialing,
+              SUM(s.retrying) AS retrying,
               -- MRR: every subscription normalised to a month from its OWN
               -- period length, rather than from the product id, so a weekly or
               -- six-month plan needs no code. 30.44 = 365.25 / 12.
@@ -706,7 +721,7 @@ async function handleStats(env) {
               SUM(CASE WHEN s.paid AND fx.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
        FROM sub s LEFT JOIN fx_rates fx ON fx.currency = s.currency
        GROUP BY s.bundle_id, s.product_id`
-    ).bind(now)
+    ).bind(now, now, now, now)
   );
 
   // Lifetime unlocks — the non-renewing way to buy the same entitlement the
@@ -1085,7 +1100,7 @@ async function handleStats(env) {
     if (!subscribers[id]) {
       subscribers[id] = {
         name: appName(id),
-        paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
+        paying: 0, lapsing: 0, offer_code: 0, trialing: 0, retrying: 0,
         mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
         unlock_owners: 0, unlock_gross_usd: 0, unlock_proceeds_usd: 0, plans: [],
       };
@@ -1100,6 +1115,7 @@ async function handleStats(env) {
       lapsing: r.lapsing || 0,
       offer_code: r.offer_code || 0,
       trialing: r.trialing || 0,
+      retrying: r.retrying || 0,
       mrr_usd: (r.mrr_millis || 0) / 1000,
       mrr_lapsing_usd: (r.mrr_lapsing_millis || 0) / 1000,
       unknown_fx: r.unknown_fx || 0,
@@ -1107,7 +1123,7 @@ async function handleStats(env) {
       period_days: price.period_days ?? null,
     };
     s.plans.push(plan);
-    for (const k of ["paying", "lapsing", "offer_code", "trialing", "mrr_usd", "mrr_lapsing_usd", "unknown_fx"]) {
+    for (const k of ["paying", "lapsing", "offer_code", "trialing", "retrying", "mrr_usd", "mrr_lapsing_usd", "unknown_fx"]) {
       s[k] += plan[k];
     }
   }
@@ -1121,7 +1137,7 @@ async function handleStats(env) {
     if (!subscribers[id]) {
       subscribers[id] = {
         name: appName(id),
-        paying: 0, lapsing: 0, offer_code: 0, trialing: 0,
+        paying: 0, lapsing: 0, offer_code: 0, trialing: 0, retrying: 0,
         mrr_usd: 0, mrr_lapsing_usd: 0, unknown_fx: 0,
         unlock_owners: 0, unlock_gross_usd: 0, unlock_proceeds_usd: 0, plans: [],
       };

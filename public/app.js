@@ -477,6 +477,9 @@
     // so it takes their size, but it stays dim because it is pipeline rather
     // than a customer we have.
     if (s.trialing) parts.push(`<b class="pending">${num(s.trialing)} TRIALS</b>`);
+    // Grace period: Apple is still granting access while it retries the card.
+    // Dim like a trial — access we're giving away, not a customer we have yet.
+    if (s.retrying) parts.push(`<b class="pending">${num(s.retrying)} RETRYING</b>`);
     if (s.unlock_owners) parts.push(`<b>${num(s.unlock_owners)}</b> LIFETIME`);
     return parts.join(" · ");
   }
@@ -533,6 +536,7 @@
               if (p.offer_code) notes.push(`codes <b>${num(p.offer_code)}</b>`);
             }
             if (p.trialing) notes.push(`<span class="pending">+${num(p.trialing)} in trial</span>`);
+            if (p.retrying) notes.push(`<span class="warn">${num(p.retrying)} in grace period</span>`);
             if (p.unknown_fx) notes.push(`<span class="warn">fx? ${num(p.unknown_fx)}</span>`);
 
             return `

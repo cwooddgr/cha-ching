@@ -155,6 +155,18 @@ Report it separately as trialing. Someone who has switched auto-renew off *is*
 still paying (they bought the period they are in) but is lapsing: count them in
 the headcount and exclude them from any forward-looking run rate.
 
+**Retrying (billing grace period)** — a subscriber whose standing row is
+`DID_FAIL_TO_RENEW` with subtype `GRACE_PERIOD` and whose grace window
+(`json_extract(raw, '$.renewalInfo.gracePeriodExpiresDate')`, ms epoch) is
+still open. Their period has ended and the charge failed, but Apple is still
+granting access while it retries the card. Report them as **retrying**:
+neither paying nor trialing, no MRR — access without revenue. There is no
+flag to maintain: a `DID_RENEW`/`BILLING_RECOVERY` outranks the grace row on
+`expires_date` (count it exactly like any renewal), and `GRACE_PERIOD_EXPIRED`
+or `EXPIRED`/`BILLING_RETRY` outranks it on `signed_date`. A
+`DID_FAIL_TO_RENEW` *without* the `GRACE_PERIOD` subtype means no grace was
+granted — that subscriber is simply expired until a recovery arrives.
+
 This is **state, not a window** — "who is subscribed right now" must not move
 when the time window changes.
 
