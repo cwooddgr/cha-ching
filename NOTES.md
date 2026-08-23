@@ -1,5 +1,36 @@
 # cha-ching — notes
 
+## Grace-period subscribers count as "retrying"
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-22
+> **Status:** decided-by-user (Charlie asked that grace-period subscribers be counted as retrying rather than vanishing; the derivation below is proposed-by-agent)
+
+Background: Charlie asked us to confirm that `DID_RENEW`/`BILLING_RECOVERY`
+is treated like any renewal and that `DID_FAIL_TO_RENEW` /
+`GRACE_PERIOD_EXPIRED` leave no stale "lapsed" flag. There is no flag to
+leave: the Worker is append-only telemetry and subscriber standing is derived
+at query time from the row with the furthest-out `expires_date`, so a
+recovery (later expiry, real price) outranks the failure on its own. No
+`DID_RENEW` query filters on subtype, so `BILLING_RECOVERY` already counted as
+revenue, renewal, MRR and trial conversion. Verified against the six
+Overflight trials that have hit billing retry (3 recovered, 2 grace-expired,
+1 expired in retry).
+
+The one gap was that a subscriber inside Apple's billing grace period —
+period ended, charge failed, Apple still granting access while it retries —
+dropped out of the CUSTOMER BASE headcount entirely. They now show as
+`retrying`: the standing row is `DID_FAIL_TO_RENEW`/`GRACE_PERIOD` and
+`renewalInfo.gracePeriodExpiresDate` (only in `raw`, read via
+`json_extract`) is still in the future. Neither paying nor trialing, no MRR.
+A `DID_FAIL_TO_RENEW` without the `GRACE_PERIOD` subtype grants no access and
+stays expired. Counting rule recorded in `CLAUDE.md`; shipped as `b795f18`.
+
+Gotcha when testing "as of" a past date: pinning `now` alone isn't enough,
+because later recovery rows still win the ranking — also restrict
+`signed_date <= then`. Done that way, 2026-08-20 shows the two subscribers
+who were mid-grace that day.
+
 ## Slack celebrations when a window's gross crosses a whole $1,000
 
 > **Author:** Claude Code (coder)
