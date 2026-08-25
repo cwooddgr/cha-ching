@@ -294,9 +294,12 @@ table is the only long-term record — never assume it can be rebuilt.
 
 **Everything else comes from Apple**, via `app_sessions` below — including
 Overflight, where Apple's figures are the opt-in *sample* and useful mainly
-as a cross-check: Apple's daily count runs at roughly a fifth of telemetry's
-(2026-08-19: Apple 208 devices, telemetry 970 installs). Don't add the two,
-and don't present Apple's Overflight numbers as its audience.
+as a cross-check: Apple's daily count runs at roughly a **third** of
+telemetry's in steady state (ratio 0.31–0.37 every ordinary day, matching the
+30–45% of downloaders who share analytics with developers per Apple's "App
+Opt In" report), and lower during referral waves whose users opt in less
+(2026-08-19 Telegram wave: 17%, ratio 0.22). Don't add the two, and don't
+present Apple's Overflight numbers as its audience.
 
 ## The app_sessions table — counting rules (Apple's active devices)
 

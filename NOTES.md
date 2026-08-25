@@ -35,8 +35,11 @@ in Last 30 Days" is UI-only) and summing daily uniques counts a daily user
 thirty times — Overflight's week of 2026-08-10 summed to ~1,050 against
 Apple's weekly distinct count of 506. Opt-in only, and Apple publishes a day
 only with ≥5 contributing users, so thin apps have gaps rather than zeros.
-Apple's daily count for Overflight runs at roughly a fifth of telemetry's
-(2026-08-19: 208 vs 970), which is our first measurement of the opt-in rate.
+Apple's daily count for Overflight runs at roughly a third of telemetry's on
+ordinary days (0.31–0.37), which matches the 30–45% opt-in Apple's own "App
+Opt In" report shows; the 2026-08-19 Telegram wave opted in at 17%, so that
+day read as a fifth. Dug into on 2026-08-25 and handed to marketroid
+(`products/overflight/OVERFLIGHT_TELEGRAM_WAVE_2026-08-19.md`).
 
 Mechanics worth knowing: both tables are created by the Worker on first use
 because `wrangler d1 execute --remote` 403s from the laptop (NOTES below,
