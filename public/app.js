@@ -517,18 +517,20 @@
     const head = lastIdx >= 0
       ? `<circle class="usage-head${slots[lastIdx].provisional ? " provisional" : ""}" r="2.6" cx="${x(lastIdx).toFixed(1)}" cy="${y(slots[lastIdx].devices).toFixed(1)}"/>`
       : "";
-    return { svg: area + lines + head, slots, peak };
+    return { svg: area + lines + head, slots, peak, any: lastIdx >= 0 };
   }
 
   function renderUsage() {
     const u = stats.usage;
     const box = $("#usage");
     if (!u || !Object.keys(u.apps || {}).length) {
-      box.innerHTML = `<div class="chat-hello">AWAITING APPLE ANALYTICS — RUN scripts/analytics-import.mjs</div>`;
-      $("#usage-note").textContent = "OPT-IN DEVICES · NOT WINDOWED";
+      box.innerHTML = `<div class="chat-hello">AWAITING USAGE DATA — RUN THE SNAPSHOT AND scripts/analytics-import.mjs</div>`;
+      $("#usage-note").textContent = "NOT WINDOWED";
       return;
     }
-    $("#usage-note").textContent = `OPT-IN DEVICES · APPLE REPORT ${u.watermark || "—"} · NOT WINDOWED`;
+    const telemetryTo = Object.values(u.apps).map((a) => a.telemetry?.date).filter(Boolean).sort().pop();
+    $("#usage-note").textContent =
+      `${telemetryTo ? `TELEMETRY TO ${shortDay(telemetryTo)} · ` : ""}APPLE REPORT ${u.watermark ? shortDay(u.watermark) : "—"} · NOT WINDOWED`;
 
     // Biggest audience first; an app with only a monthly figure still sorts
     // by it. Ties (all null) fall back to name so the order is stable.
@@ -584,8 +586,8 @@
             </svg>
             <div class="usage-axis">
               <span class="usage-axis-from">${shortDay(u.trend_start)}</span>
-              <span class="usage-axis-read">${series.label}</span>
-              <span class="usage-axis-peak">PEAK ${num(spark.peak)}</span>
+              <span class="usage-axis-read">${spark.any ? series.label : "NO DAILY DATA IN THE LAST 30 DAYS"}</span>
+              <span class="usage-axis-peak">${spark.any ? `PEAK ${num(spark.peak)}` : ""}</span>
             </div>
           </div>
           ${appleNote}
