@@ -339,7 +339,10 @@ dashboard's ACTIVE DEVICES panel shows for them.
   window, so its July MAU is a partial month.
 - **Not every app reports.** Bezelbub (macOS) has produced weekly rows only;
   Countdowns and Flip Flap appear sporadically. "As available" is the rule —
-  report what exists, name what doesn't.
+  report what exists, name what doesn't. The dashboard panel goes further
+  (Charlie's call, 2026-08-25): an app with no daily row in the last 30 days
+  and no telemetry is left off it entirely, so a months-old monthly figure
+  can't pass for current. The rows stay queryable here.
 
 **Countdowns sends us no notifications, and that is fine** (found 2026-08-10;
 Charlie's call the same day). Its V2 notification URL is almost certainly unset

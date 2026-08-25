@@ -532,9 +532,21 @@
     $("#usage-note").textContent =
       `${telemetryTo ? `TELEMETRY TO ${shortDay(telemetryTo)} · ` : ""}APPLE REPORT ${u.watermark ? shortDay(u.watermark) : "—"} · NOT WINDOWED`;
 
+    // Only apps with something to say in the window: telemetry, or at least
+    // one daily row from Apple in the last 30 days (Charlie's call,
+    // 2026-08-25). A product whose last report is months old gets no row —
+    // its stale monthly figure would read as current.
+    const shown = Object.entries(u.apps).filter(
+      ([, a]) => a.telemetry || (a.trend && a.trend.length)
+    );
+    if (!shown.length) {
+      box.innerHTML = `<div class="chat-hello">NO APP WITH USAGE DATA IN THE LAST 30 DAYS</div>`;
+      return;
+    }
+
     // Biggest audience first; an app with only a monthly figure still sorts
     // by it. Ties (all null) fall back to name so the order is stable.
-    const entries = Object.entries(u.apps).sort(
+    const entries = shown.sort(
       (a, b) =>
         ((b[1].mau?.devices ?? b[1].wau?.devices ?? b[1].dau?.devices ?? -1) -
           (a[1].mau?.devices ?? a[1].wau?.devices ?? a[1].dau?.devices ?? -1)) ||
