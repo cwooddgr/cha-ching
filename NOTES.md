@@ -1,5 +1,54 @@
 # cha-ching — notes
 
+## Active users: Overflight's telemetry for MAU, Apple's reports for the rest
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-08-25
+> **Status:** decided-by-user (Charlie asked for per-app MAU "as available", recalculated daily, with a 30-day trend graph, and pointed out mid-build that Overflight carries its own telemetry); the source split, table shapes and panel design below are proposed-by-agent
+
+The dashboard's new ACTIVE DEVICES panel draws on two sources, and each row
+says which:
+
+**Overflight — telemetry.** Its app posts `session_start` per foreground with
+a per-install random UUID to the Overflight Worker (Analytics Engine dataset
+`overflight_app`). A daily cron in this Worker (`[triggers]`, 01:20 UTC;
+`snapshotActiveUsers`) queries the AE SQL API and writes one row per UTC day
+into `active_users`: distinct installs active in the 1 / 7 / 30 days ending
+that day. That is a true rolling MAU over every install, recalculated daily,
+and the panel's curve for Overflight is the rolling MAU itself. I snapshot
+rather than query live because AE retains only three months and because the
+dashboard must not spend AE queries per refresh. `*-debug` clients (dev
+devices) are excluded; the series starts at the 2026-07-20 launch. First
+snapshot: MAU 6,062 for the 30 days to 2026-08-24.
+
+**Everything else — Apple's App Sessions report.** `scripts/analytics-import.mjs`
+(daily launchd job, 10:15 and 18:15 local; same Finance-role key as the
+sales import) pulls every instance of "App Sessions Standard" for each app
+into `app_sessions`. ONGOING report requests already existed for all five App
+Store apps when I looked (a Finance key can read them but not create them —
+a new app needs an Admin key once). Apple gives distinct devices per day, per
+Monday–Sunday week and per calendar month, so for these apps MAU is the
+latest calendar month's figure, WAU the latest complete week's, DAU the
+latest day's, and the curve is daily actives. I deliberately show no rolling
+30-day number for them: Apple doesn't expose one (App Store Connect's "Active
+in Last 30 Days" is UI-only) and summing daily uniques counts a daily user
+thirty times — Overflight's week of 2026-08-10 summed to ~1,050 against
+Apple's weekly distinct count of 506. Opt-in only, and Apple publishes a day
+only with ≥5 contributing users, so thin apps have gaps rather than zeros.
+Apple's daily count for Overflight runs at roughly a fifth of telemetry's
+(2026-08-19: 208 vs 970), which is our first measurement of the opt-in rate.
+
+Mechanics worth knowing: both tables are created by the Worker on first use
+because `wrangler d1 execute --remote` 403s from the laptop (NOTES below,
+2026-08-22); the Apple import honours "latest instance wins" per date so
+re-runs and out-of-order instances are safe; the last five days of Apple
+data are marked provisional (dimmed) per Apple's completeness window. The
+analytics-read token in the `CF_ANALYTICS_TOKEN` secret is currently
+itdept's `CF_READ_TOKEN` — the account pattern since 2026-08-07 is a
+dedicated Account-Analytics-Read token per Worker, so a `cha-ching-analytics`
+token should replace it when Charlie says so (needs `ITDEPT_CF_TOKENS_ADMIN`).
+
+
 ## Grace-period subscribers count as "retrying"
 
 > **Author:** Claude Code (coder)

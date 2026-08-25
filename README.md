@@ -7,8 +7,9 @@ Apple App Store ──(HTTPS POST, signed JWT)──> Cloudflare Worker ──�
                                                                   └──> Slack #cha-ching (curated)
 
 Dashboard (same worker, https://rev-9000.dgrlabs.co — behind Cloudflare Access):
-  /            FUI dashboard — revenue, subscribers, trials, refunds (24h/7d/30d/all, per app)
-  /api/stats   aggregates from D1
+  /            FUI dashboard — revenue, subscribers, trials, refunds (24h/7d/30d/all, per app),
+               active devices (DAU/WAU/MAU + 30-day trend, from Apple's analytics reports)
+  /api/stats   aggregates from D1 (revenue, subscribers, MRR, active users)
   /api/chat    proxies one turn to agent-bridge on bigiron (Claude Code), streamed via SSE
   /api/query   bearer-auth, workers.dev — the agent's SELECT-only window onto D1
 ```
@@ -28,6 +29,8 @@ carry no app-level auth of their own (same arrangement as house.dgrlabs.co).
 |---|---|---|
 | Ingest | `POST /` | Apple's notification endpoint. Persists **everything** (including Sandbox and Slack-suppressed types) to D1, then applies the existing Slack rules. |
 | Backfill | `POST /api/backfill` | Bearer-authenticated; accepts `{signedPayloads: [...]}` and stores without Slacking. Fed by `scripts/backfill.mjs`. |
+| Usage snapshot | cron + `POST /api/usage-snapshot` | Daily: rolling DAU/WAU/MAU per app from first-party telemetry (Overflight's Analytics Engine dataset) into `active_users`. The POST runs it by hand (bearer-authenticated). |
+| Analytics import | `POST /api/analytics-import` | Bearer-authenticated; stores one instance of Apple's App Sessions analytics report (active devices). Fed daily by `scripts/analytics-import.mjs`. |
 | Stats | `GET /api/stats` | Aggregates per window (24h/7d/30d/all) and per app: est. revenue (USD), refunds, new subs, trial starts/conversions, renewals, one-time buys, churn signals. |
 | Chat | `POST /api/chat` | SSE stream. Proxies to `agent-bridge` on bigiron, which runs Claude Code on Charlie's **subscription** rather than the Anthropic API. No model call happens in this worker. |
 | Query | `POST /api/query` | Bearer-authenticated, reachable on workers.dev because the agent is a script on bigiron and cannot clear Access. Single SELECT/WITH statements only — that guard is the only thing between an analytics console and a write handle. |
@@ -109,6 +112,7 @@ curl -X POST http://localhost:8787 \
 | `DASHBOARD_SECRET` | Bearer token for `/api/backfill`. |
 | `QUERY_TOKEN` | Bearer token for `/api/query`, held only by `ccq` on bigiron. Deliberately separate from `DASHBOARD_SECRET`: reading the database and writing rows into it are different privileges. |
 | `CHAT_TOKEN` | Shared secret for `agent-bridge` on bigiron, which backs the analyst console. Must match `/etc/agent-bridge/config.json` there. |
+| `CF_ANALYTICS_TOKEN` | Cloudflare API token with Account Analytics Read, for the daily telemetry snapshot's Analytics Engine SQL queries. Paired with the `CF_ACCOUNT_ID` var. |
 
 ## Notification Types → Slack
 

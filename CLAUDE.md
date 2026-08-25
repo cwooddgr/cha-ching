@@ -92,6 +92,31 @@ TABLE sales (                     -- Apple's DAILY Summary Sales reports
 )
 
 TABLE sales_import_log (report_date TEXT PRIMARY KEY, imported_at INTEGER, row_count INTEGER)
+
+TABLE app_sessions (              -- Apple's "App Sessions" analytics report
+  granularity TEXT,               -- 'DAILY' | 'WEEKLY' | 'MONTHLY'
+  date TEXT,                      -- the day, or the FIRST day of the week/month
+  processing_date TEXT,           -- report instance that supplied the row
+  bundle_id TEXT,
+  app_apple_id TEXT,
+  app_version TEXT, device TEXT, platform_version TEXT,
+  source_type TEXT, page_type TEXT, download_date TEXT,
+  territory TEXT,                 -- alpha-2
+  sessions INTEGER,
+  session_duration INTEGER,       -- seconds, summed over the row's sessions
+  unique_devices INTEGER          -- distinct devices in THIS row's period
+)
+
+TABLE analytics_import_log (instance_id TEXT PRIMARY KEY, bundle_id TEXT, granularity TEXT,
+                            processing_date TEXT, imported_at INTEGER, row_count INTEGER)
+
+TABLE active_users (              -- first-party telemetry (Overflight only so far)
+  bundle_id TEXT, date TEXT,      -- UTC day the windows END on; PK (bundle_id, date)
+  dau INTEGER, wau INTEGER, mau INTEGER,  -- distinct installs with a session_start
+                                  -- in the 1 / 7 / 30 days ending that day
+  sessions INTEGER,               -- session_starts that day
+  computed_at INTEGER
+)
 ```
 
 **Always filter to `environment = 'Production'`** unless the question is
@@ -254,6 +279,68 @@ rather than appended so restatements land cleanly.
   send us no notifications at all. Filter on `bundle_id` unless the question
   is genuinely account-wide.
 
+## Active users — two sources, and which one to answer from
+
+**Overflight reports for itself.** Every install mints a random UUID and
+posts `session_start` to the Overflight Worker (Analytics Engine dataset
+`overflight_app`; see `overflight/worker`). Our daily cron snapshots that
+into `active_users`: for each UTC day, the distinct installs active in the
+1 / 7 / 30 days ending that day. **This is Overflight's DAU / WAU / MAU** —
+exact, every install, a true rolling window, recalculated daily. Answer
+Overflight usage questions from `active_users`; the newest row is "now"
+(yesterday UTC — today's window is still open). Development builds
+(`*-debug` clients) are excluded. Analytics Engine keeps three months, so the
+table is the only long-term record — never assume it can be rebuilt.
+
+**Everything else comes from Apple**, via `app_sessions` below — including
+Overflight, where Apple's figures are the opt-in *sample* and useful mainly
+as a cross-check: Apple's daily count runs at roughly a fifth of telemetry's
+(2026-08-19: Apple 208 devices, telemetry 970 installs). Don't add the two,
+and don't present Apple's Overflight numbers as its audience.
+
+## The app_sessions table — counting rules (Apple's active devices)
+
+Imported daily by `scripts/analytics-import.mjs` from App Store Connect's
+Analytics Reports API ("App Sessions Standard"). For every app except
+Overflight this is the **only usage data we have**, and it is what the
+dashboard's ACTIVE DEVICES panel shows for them.
+
+- **Active devices for a period = `SUM(unique_devices)` over the rows that
+  share one `(granularity, bundle_id, date)`.** A row is one slice of
+  dimensions (version × device × OS × territory × …) and `unique_devices` is
+  Apple's distinct count within that slice, so summing the slices of one
+  period is the period's headcount (a device on two app versions in one day
+  would count twice — rare, ignore).
+- **DAU / WAU / MAU are three different rows, not one rolled up.** `DAILY`
+  rows give a day's devices, `WEEKLY` rows (dated Monday) a Monday–Sunday
+  week's, `MONTHLY` rows (dated the 1st) a calendar month's. Each is Apple's
+  own de-duplicated count for that span.
+- ⚠️ **Never sum daily uniques across days to make a "monthly active" figure.**
+  A device active every day is thirty rows; the sum is device-days, not
+  devices, and overstates MAU several-fold (Overflight, week of 2026-08-10:
+  daily rows summed to ~1,050, Apple's weekly unique count was 506). There is
+  **no rolling 30-day figure in this data** — App Store Connect's "Active in
+  Last 30 Days" exists only in the web UI. If asked for "MAU", give the latest
+  calendar month's `MONTHLY` row and say which month; if asked for something
+  rolling, say it is not available rather than approximating.
+- **Opt-in only, thresholded.** Counts cover devices whose users share
+  analytics with developers, and Apple publishes a period only when at least
+  five users contributed. A missing day is "under threshold", not zero, and
+  every figure understates the true audience by the opt-out rate. Say so.
+- **Recent days are still settling.** Daily data is complete within five
+  days; each new instance restates the last few days in full, and the import
+  keeps the newest `processing_date` per date. Treat the last five days as
+  provisional (the dashboard dims them).
+- **Dates are Apple's report days**, not UTC and not Pacific-time sales days
+  — don't join this table to `notifications` or `sales` on a date.
+- **Weekly and monthly rows lag.** Weekly arrives the following Friday,
+  monthly on the 5th of the next month. A month with no `MONTHLY` row yet is
+  not zero. Overflight's July 2026 row covers only its 20–31 July launch
+  window, so its July MAU is a partial month.
+- **Not every app reports.** Bezelbub (macOS) has produced weekly rows only;
+  Countdowns and Flip Flap appear sporadically. "As available" is the rule —
+  report what exists, name what doesn't.
+
 **Countdowns sends us no notifications, and that is fine** (found 2026-08-10;
 Charlie's call the same day). Its V2 notification URL is almost certainly unset
 in App Store Connect, but at four lifetime unlocks the revenue isn't worth
@@ -277,6 +364,25 @@ being asked for.
 
 - `src/index.js` — the whole Worker: ingest, Slack, stats, the analyst
   endpoints. `public/` is the dashboard (no build step).
+- **Telemetry snapshot** (`snapshotActiveUsers` in `src/index.js`) — the
+  daily cron (`[triggers]` in `wrangler.toml`, 01:20 UTC) that fills
+  `active_users` from Overflight's Analytics Engine dataset through the AE SQL
+  API. Needs `CF_ACCOUNT_ID` (a var) and the `CF_ANALYTICS_TOKEN` secret
+  (Account Analytics Read). `POST /api/usage-snapshot` (bearer
+  `DASHBOARD_SECRET`, workers.dev) runs the same thing by hand; both skip
+  days already held, so either can run any time. A new app with telemetry
+  is one entry in `TELEMETRY_SOURCES`.
+- `scripts/analytics-import.mjs` — pulls Apple's "App Sessions Standard"
+  analytics report (daily/weekly/monthly active devices) into `app_sessions`.
+  Same Finance-role key as the sales import; that role can download reports
+  but not create the per-app ONGOING report request — those exist for all
+  five App Store apps (created before 2026-08-25) and a new app's needs an
+  Admin key once. The Worker's `/api/analytics-import` bootstraps the tables
+  on first use because `wrangler d1 execute --remote` 403s from the laptop.
+  Runs **daily** at 10:15 and 18:15 local via
+  `scripts/co.dgrlabs.cha-ching.analytics-import.plist` (log at
+  `~/Library/Logs/cha-ching-analytics-import.log`); idempotent, so the second
+  run of a day is a no-op once Apple has published.
 - `scripts/sales-import.mjs` — pulls Apple's daily sales reports into `sales`.
   Needs an App Store Connect **Team key** with the Finance role (NOT the
   In-App Purchase key `backfill.mjs` uses — Apple restricts that one to the
@@ -288,7 +394,7 @@ being asked for.
   `~/Library/Logs/cha-ching-sales-import.log`). A run missed while the Mac is
   asleep costs nothing — the next one backfills it.
 - Deploy: `npx wrangler deploy`. Secrets: `SLACK_WEBHOOK_URL`,
-  `DASHBOARD_SECRET`, `CHAT_TOKEN`.
+  `DASHBOARD_SECRET`, `CHAT_TOKEN`, `QUERY_TOKEN`, `CF_ANALYTICS_TOKEN`.
 - The console's chat proxies to `agent-bridge` on bigiron; there is no
   Anthropic API key in this project any more, and adding one back would move
   billing off Charlie's subscription.

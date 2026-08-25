@@ -79,6 +79,68 @@ CREATE TABLE IF NOT EXISTS sales_import_log (
   row_count INTEGER NOT NULL
 );
 
+-- ---------------------------------------------------------------------------
+-- Apple App Sessions analytics (App Store Connect API, Analytics Reports)
+-- ---------------------------------------------------------------------------
+-- One row per line of an "App Sessions Standard" report instance. Imported by
+-- scripts/analytics-import.mjs; the Worker's /api/analytics-import creates
+-- these tables itself on first use (wrangler d1 execute --remote 403s from
+-- the laptop), so this block is the record, not the mechanism.
+--
+-- `unique_devices` is Apple's distinct-device count FOR THAT ROW's slice of
+-- dimensions within the row's period (a day, a Monday–Sunday week, or a
+-- calendar month). Summing rows within one (granularity, bundle_id, date)
+-- gives that period's active devices; summing ACROSS dates does not give
+-- anything — a device active on ten days is ten rows. See CLAUDE.md.
+CREATE TABLE IF NOT EXISTS app_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  granularity TEXT NOT NULL,       -- 'DAILY' | 'WEEKLY' | 'MONTHLY'
+  date TEXT NOT NULL,              -- the day, or the FIRST day of the week/month
+  processing_date TEXT NOT NULL,   -- instance that supplied the row; latest wins
+  bundle_id TEXT,
+  app_apple_id TEXT,
+  app_version TEXT,
+  device TEXT,                     -- 'iPhone' | 'iPad' | 'Apple TV' | 'Desktop' …
+  platform_version TEXT,           -- 'iOS 26.5', 'tvOS 26.3' …
+  source_type TEXT,                -- how the app was discovered
+  page_type TEXT,
+  download_date TEXT,              -- only if downloaded in the previous 30 days
+  territory TEXT,                  -- alpha-2
+  sessions INTEGER,
+  session_duration INTEGER,        -- seconds, total across the row's sessions
+  unique_devices INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_sessions_lookup ON app_sessions (granularity, bundle_id, date);
+
+-- Which report instances have been imported, so runs skip them.
+CREATE TABLE IF NOT EXISTS analytics_import_log (
+  instance_id TEXT PRIMARY KEY,
+  bundle_id TEXT,
+  granularity TEXT NOT NULL,
+  processing_date TEXT NOT NULL,
+  imported_at INTEGER NOT NULL,    -- ms since epoch
+  row_count INTEGER NOT NULL
+);
+
+-- ---------------------------------------------------------------------------
+-- Active users from first-party telemetry (Overflight → Analytics Engine)
+-- ---------------------------------------------------------------------------
+-- One row per app per UTC day, written by the Worker's daily cron
+-- (snapshotActiveUsers): the distinct installs that posted a session_start in
+-- the 1 / 7 / 30 days ENDING on `date`. Exact and over every install — the
+-- opposite of app_sessions' opt-in sample. Created by the Worker on first use.
+CREATE TABLE IF NOT EXISTS active_users (
+  bundle_id TEXT NOT NULL,
+  date TEXT NOT NULL,              -- UTC day the windows end on (inclusive)
+  dau INTEGER NOT NULL,
+  wau INTEGER NOT NULL,
+  mau INTEGER NOT NULL,
+  sessions INTEGER NOT NULL,       -- session_starts on that day
+  computed_at INTEGER NOT NULL,    -- ms since epoch
+  PRIMARY KEY (bundle_id, date)
+);
+
 -- Static currency -> USD conversion rates for revenue estimates.
 -- Rates are approximate (mid-2026); revenue figures are estimates, not accounting truth.
 CREATE TABLE IF NOT EXISTS fx_rates (

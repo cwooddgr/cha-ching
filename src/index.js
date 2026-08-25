@@ -23,6 +23,10 @@ const APP_NAMES = {
   "co.dgrlabs.countdowns": "Countdowns",
   "co.dgrlabs.heymuso": "HeyMuso",
   "co.dgrlabs.overflight": "Overflight",
+  // Send no notifications (no IAP), but do appear in the sales and analytics
+  // reports, so they need a name once those panels show them.
+  "co.dgrlabs.flipflap": "Flip Flap",
+  "co.dgrlabs.bezelbub": "Bezelbub",
 };
 
 const REVENUE_EVENTS = new Set([
@@ -948,6 +952,8 @@ async function handleStats(env) {
   const results = await env.DB.batch(statements);
   const byKey = Object.fromEntries(keys.map((k, i) => [k, results[i].results]));
 
+  const usage = await usageStats(env, now);
+
   const isRevenueRow = (r) =>
     ((["DID_RENEW", "ONE_TIME_CHARGE"].includes(r.notification_type)) ||
       (["SUBSCRIBED", "OFFER_REDEEMED"].includes(r.notification_type) &&
@@ -1200,6 +1206,7 @@ async function handleStats(env) {
     projection,
     subscribers,
     mrr,
+    usage,
     feed: byKey.feed || [],
     meta: {
       total_events: meta.total || 0,
@@ -1211,6 +1218,156 @@ async function handleStats(env) {
       apps: APP_NAMES,
     },
   });
+}
+
+// ---------------------------------------------------------------------------
+// Usage (Apple's App Sessions analytics)
+// ---------------------------------------------------------------------------
+
+// How many days back the ACTIVE DEVICES sparkline reaches.
+const USAGE_TREND_DAYS = 30;
+
+// Apple's App Sessions report is "complete within five days": a day keeps
+// being restated by the next few instances as late events arrive, so its
+// newest days are real numbers that will still grow. The dashboard dims them.
+const USAGE_SETTLE_DAYS = 5;
+
+function isoDay(ms) {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Per-app active-device figures from `app_sessions`, or null if the table
+ * hasn't been created yet (the analytics importer creates it on first run).
+ *
+ * Its own batch, separate from the revenue statements above, precisely so a
+ * missing table degrades to an empty panel rather than a dead dashboard.
+ *
+ * Three exact figures per app, straight from Apple's own distinct counts:
+ *   mau — unique devices in the latest complete CALENDAR month
+ *   wau — unique devices in the latest complete Monday–Sunday week
+ *   dau — unique devices on the latest reported day
+ * plus a 30-day daily trend. There is deliberately no rolling-30-day figure:
+ * Apple does not expose one through the API, and summing daily uniques over
+ * 30 days counts a daily user thirty times. See CLAUDE.md.
+ */
+async function usageStats(env, now) {
+  const trendStart = isoDay(now - (USAGE_TREND_DAYS - 1) * 86400000);
+  let results;
+  try {
+    results = await env.DB.batch([
+      env.DB.prepare(
+        `SELECT bundle_id, date, SUM(unique_devices) AS devices, SUM(sessions) AS sessions
+         FROM app_sessions
+         WHERE granularity = 'DAILY' AND date >= ? AND bundle_id IS NOT NULL
+         GROUP BY bundle_id, date ORDER BY date`
+      ).bind(trendStart),
+      env.DB.prepare(
+        `SELECT granularity, bundle_id, date, SUM(unique_devices) AS devices, SUM(sessions) AS sessions
+         FROM app_sessions
+         WHERE granularity IN ('WEEKLY', 'MONTHLY') AND bundle_id IS NOT NULL
+         GROUP BY granularity, bundle_id, date ORDER BY date`
+      ),
+      env.DB.prepare(
+        `SELECT bundle_id, granularity, MAX(processing_date) AS newest
+         FROM analytics_import_log GROUP BY bundle_id, granularity`
+      ),
+      env.DB.prepare(
+        `SELECT bundle_id, MAX(date) AS latest FROM app_sessions
+         WHERE granularity = 'DAILY' AND bundle_id IS NOT NULL GROUP BY bundle_id`
+      ),
+    ]);
+  } catch (e) {
+    if (/no such table/i.test(String(e?.message || e))) results = null;
+    else throw e;
+  }
+  const [daily, periods, log, latestDay] = results
+    ? results.map((r) => r.results || [])
+    : [[], [], [], []];
+
+  // First-party telemetry (Overflight's per-install UUIDs), snapshotted daily
+  // by snapshotActiveUsers. Its own try so either table can be missing.
+  let telemetry = [];
+  try {
+    telemetry = (
+      await env.DB.prepare(
+        `SELECT bundle_id, date, dau, wau, mau, sessions FROM active_users
+         WHERE date >= ? ORDER BY date`
+      ).bind(trendStart).all()
+    ).results || [];
+  } catch (e) {
+    if (!/no such table/i.test(String(e?.message || e))) throw e;
+  }
+  if (!results && !telemetry.length) return null;
+
+  const apps = {};
+  const app = (id) => {
+    if (!apps[id]) {
+      apps[id] = {
+        name: APP_NAMES[id] || id,
+        mau: null, wau: null, dau: null,
+        trend: [],
+        daily_watermark: null,
+        // Set only for apps with first-party telemetry: exact rolling
+        // counts, every install (not opt-in), recalculated daily.
+        telemetry: null,
+      };
+    }
+    return apps[id];
+  };
+
+  for (const r of log) {
+    if (r.granularity === "DAILY") app(r.bundle_id).daily_watermark = r.newest;
+  }
+
+  // Latest complete week and month per app. A period row exists only once
+  // Apple has published it (weekly on the following Friday, monthly on the
+  // 5th), so "latest" is also "latest complete".
+  for (const r of periods) {
+    const a = app(r.bundle_id);
+    const key = r.granularity === "WEEKLY" ? "wau" : "mau";
+    if (!a[key] || r.date > a[key].period) {
+      a[key] = { period: r.date, devices: r.devices || 0, sessions: r.sessions || 0 };
+    }
+  }
+
+  for (const r of daily) {
+    const a = app(r.bundle_id);
+    a.trend.push({ d: r.date, devices: r.devices || 0, sessions: r.sessions || 0 });
+  }
+
+  for (const r of latestDay) {
+    const a = app(r.bundle_id);
+    const point = a.trend.find((p) => p.d === r.latest);
+    // The latest day may predate the 30-day window (an app Apple only
+    // reports sporadically); then there is no DAU worth showing.
+    if (point) a.dau = { period: r.latest, devices: point.devices, sessions: point.sessions };
+  }
+
+  // Everything newer than (watermark − 5 days) is still filling in.
+  for (const a of Object.values(apps)) {
+    const settled = a.daily_watermark
+      ? isoDay(Date.parse(`${a.daily_watermark}T00:00:00Z`) - USAGE_SETTLE_DAYS * 86400000)
+      : null;
+    for (const p of a.trend) p.provisional = settled ? p.d > settled : false;
+    if (a.dau) a.dau.provisional = settled ? a.dau.period > settled : false;
+  }
+
+  for (const r of telemetry) {
+    const a = app(r.bundle_id);
+    if (!a.telemetry) a.telemetry = { date: null, dau: 0, wau: 0, mau: 0, sessions: 0, trend: [] };
+    a.telemetry.trend.push({ d: r.date, mau: r.mau, wau: r.wau, dau: r.dau, sessions: r.sessions });
+    // Rows arrive date-ascending, so the last one seen is the headline.
+    Object.assign(a.telemetry, { date: r.date, dau: r.dau, wau: r.wau, mau: r.mau, sessions: r.sessions });
+  }
+
+  return {
+    trend_days: USAGE_TREND_DAYS,
+    trend_start: trendStart,
+    settle_days: USAGE_SETTLE_DAYS,
+    watermark: log.reduce((m, r) => (r.newest > (m || "") ? r.newest : m), null),
+    apps,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1514,6 +1671,265 @@ async function handleSalesImport(request, env) {
 }
 
 // ---------------------------------------------------------------------------
+// Active users from first-party telemetry (Analytics Engine)
+// ---------------------------------------------------------------------------
+//
+// Overflight reports to its own Worker: every install mints a random UUID and
+// posts `session_start` on each foreground (overflight/worker, dataset
+// `overflight_app`, index1 = install). That gives the one figure Apple's
+// analytics can't — a true rolling "distinct installs active in the last N
+// days", covering EVERY install rather than the opt-in fifth Apple sees.
+//
+// A daily cron reads it through the Analytics Engine SQL API and stores one
+// row per UTC day in `active_users`: the DAU / WAU / MAU whose windows END on
+// that day. Snapshotting rather than querying live is deliberate — AE keeps
+// three months, so without a table of our own the trend would fall off the
+// back; and the dashboard must not spend an AE query per refresh.
+//
+// Only Overflight has telemetry today. Adding an app means adding an entry
+// here with its dataset and filter; the rest is generic.
+const TELEMETRY_SOURCES = [
+  {
+    bundle_id: "co.dgrlabs.overflight",
+    dataset: "overflight_app",
+    // Development builds (Charlie's own devices) tag themselves *-debug.
+    where: "blob1 = 'session_start' AND blob3 != 'ios-debug' AND blob3 != 'tvos-debug'",
+    // App Store launch. Beta telemetry reaches back to June, but the beta
+    // testers were a different population and the trend should start where
+    // the product did.
+    first_day: "2026-07-20",
+  },
+];
+
+async function analyticsEngineSql(env, sql) {
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/analytics_engine/sql`,
+    { method: "POST", headers: { Authorization: `Bearer ${env.CF_ANALYTICS_TOKEN}` }, body: `${sql} FORMAT JSON` }
+  );
+  if (!res.ok) throw new Error(`Analytics Engine ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()).data || [];
+}
+
+const ACTIVE_USERS_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS active_users (
+     bundle_id TEXT NOT NULL,
+     date TEXT NOT NULL,
+     dau INTEGER NOT NULL,
+     wau INTEGER NOT NULL,
+     mau INTEGER NOT NULL,
+     sessions INTEGER NOT NULL,
+     computed_at INTEGER NOT NULL,
+     PRIMARY KEY (bundle_id, date)
+   )`,
+];
+
+/**
+ * Fill `active_users` up to yesterday (UTC) for every telemetry source.
+ * Idempotent: days already held are skipped, so the cron and the manual
+ * endpoint can both call it freely. Returns what it computed.
+ */
+async function snapshotActiveUsers(env) {
+  if (!env.CF_ACCOUNT_ID || !env.CF_ANALYTICS_TOKEN) {
+    throw new Error("CF_ACCOUNT_ID / CF_ANALYTICS_TOKEN not configured");
+  }
+  await env.DB.batch(ACTIVE_USERS_SCHEMA.map((sql) => env.DB.prepare(sql)));
+
+  // Yesterday is the newest COMPLETE UTC day; today's window is still open.
+  const yesterday = isoDay(Date.now() - 86400000);
+  const out = {};
+  for (const src of TELEMETRY_SOURCES) {
+    const held = new Set(
+      ((await env.DB.prepare("SELECT date FROM active_users WHERE bundle_id = ?").bind(src.bundle_id).all()).results || [])
+        .map((r) => r.date)
+    );
+    const rows = [];
+    for (let t = Date.parse(`${src.first_day}T00:00:00Z`); isoDay(t) <= yesterday; t += 86400000) {
+      const day = isoDay(t);
+      if (held.has(day)) continue;
+      const end = `${isoDay(t + 86400000)} 00:00:00`;
+      const from = (days) => `${isoDay(t - (days - 1) * 86400000)} 00:00:00`;
+      const distinct = (days) =>
+        `SELECT COUNT(DISTINCT index1) AS n, SUM(_sample_interval) AS sessions FROM ${src.dataset}
+         WHERE ${src.where} AND timestamp >= toDateTime('${from(days)}') AND timestamp < toDateTime('${end}')`;
+      // Three windows, three queries: the SQL API has no conditional-distinct.
+      const [d1, d7, d30] = await Promise.all([distinct(1), distinct(7), distinct(30)].map((q) => analyticsEngineSql(env, q)));
+      const n = (r, k = "n") => Number(r?.[0]?.[k]) || 0;
+      rows.push({ date: day, dau: n(d1), wau: n(d7), mau: n(d30), sessions: n(d1, "sessions") });
+    }
+    if (rows.length) {
+      const now = Date.now();
+      await env.DB.batch(
+        rows.map((r) =>
+          env.DB.prepare(
+            `INSERT OR REPLACE INTO active_users (bundle_id, date, dau, wau, mau, sessions, computed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
+          ).bind(src.bundle_id, r.date, r.dau, r.wau, r.mau, r.sessions, now)
+        )
+      );
+    }
+    out[src.bundle_id] = rows;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Analytics import (App Sessions)
+// ---------------------------------------------------------------------------
+
+const SESSION_COLUMNS = [
+  "granularity", "date", "processing_date", "bundle_id", "app_apple_id",
+  "app_version", "device", "platform_version", "source_type", "page_type",
+  "download_date", "territory", "sessions", "session_duration", "unique_devices",
+];
+
+// Created here rather than by `wrangler d1 execute` because that path 403s
+// from the laptop (see NOTES.md); the importer is the only writer, so the
+// first import bootstraps the tables. Mirrored in schema.sql for the record.
+const ANALYTICS_SCHEMA = [
+  `CREATE TABLE IF NOT EXISTS app_sessions (
+     id INTEGER PRIMARY KEY AUTOINCREMENT,
+     granularity TEXT NOT NULL,
+     date TEXT NOT NULL,
+     processing_date TEXT NOT NULL,
+     bundle_id TEXT,
+     app_apple_id TEXT,
+     app_version TEXT,
+     device TEXT,
+     platform_version TEXT,
+     source_type TEXT,
+     page_type TEXT,
+     download_date TEXT,
+     territory TEXT,
+     sessions INTEGER,
+     session_duration INTEGER,
+     unique_devices INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_app_sessions_lookup ON app_sessions (granularity, bundle_id, date)`,
+  `CREATE TABLE IF NOT EXISTS analytics_import_log (
+     instance_id TEXT PRIMARY KEY,
+     bundle_id TEXT,
+     granularity TEXT NOT NULL,
+     processing_date TEXT NOT NULL,
+     imported_at INTEGER NOT NULL,
+     row_count INTEGER NOT NULL
+   )`,
+];
+
+let analyticsSchemaReady = false;
+async function ensureAnalyticsSchema(env) {
+  if (analyticsSchemaReady) return;
+  await env.DB.batch(ANALYTICS_SCHEMA.map((sql) => env.DB.prepare(sql)));
+  analyticsSchemaReady = true;
+}
+
+/**
+ * POST /api/analytics-import — store one INSTANCE of Apple's App Sessions
+ * report (one app, one granularity, one processingDate).
+ *
+ * Body: { instanceId, bundleId, granularity, processingDate, rows: [...] },
+ * each row carrying the column names above minus the three the envelope
+ * supplies. As with the sales import, the gzip/TSV unpacking stays in the
+ * script.
+ *
+ * Apple's rule for these reports is "the latest instance wins": an instance
+ * restates every date it contains in full, so each date present in the
+ * payload REPLACES what an older instance said about it. A date that a newer
+ * instance has already restated is left alone, which makes the order the
+ * script sends instances in irrelevant and any re-run safe.
+ */
+async function handleAnalyticsImport(request, env) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Body must be JSON" }, 400);
+  }
+
+  const { instanceId, bundleId, granularity, processingDate } = body;
+  if (!instanceId || typeof instanceId !== "string") {
+    return json({ error: "instanceId required" }, 400);
+  }
+  if (!["DAILY", "WEEKLY", "MONTHLY"].includes(granularity)) {
+    return json({ error: "granularity must be DAILY, WEEKLY or MONTHLY" }, 400);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(processingDate || ""))) {
+    return json({ error: "processingDate must be YYYY-MM-DD" }, 400);
+  }
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (rows.length > 20000) {
+    return json({ error: "too many rows for one instance" }, 400);
+  }
+  for (const r of rows) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(r.date || ""))) {
+      return json({ error: "every row needs a YYYY-MM-DD date" }, 400);
+    }
+  }
+
+  await ensureAnalyticsSchema(env);
+
+  const dates = [...new Set(rows.map((r) => r.date))];
+
+  // Dates a NEWER instance has already restated stay as they are.
+  const superseded = new Set();
+  if (dates.length) {
+    const { results } = await env.DB.prepare(
+      `SELECT DISTINCT date FROM app_sessions
+       WHERE granularity = ? AND bundle_id IS ? AND processing_date > ?
+         AND date IN (${dates.map(() => "?").join(", ")})`
+    ).bind(granularity, bundleId ?? null, processingDate, ...dates).all();
+    for (const r of results || []) superseded.add(r.date);
+  }
+
+  const placeholders = SESSION_COLUMNS.map(() => "?").join(", ");
+  const insert = env.DB.prepare(
+    `INSERT INTO app_sessions (${SESSION_COLUMNS.join(", ")}) VALUES (${placeholders})`
+  );
+  const envelope = { granularity, processing_date: processingDate, bundle_id: bundleId ?? null };
+
+  const statements = [];
+  for (const d of dates) {
+    if (superseded.has(d)) continue;
+    statements.push(
+      env.DB.prepare(
+        `DELETE FROM app_sessions
+         WHERE granularity = ? AND bundle_id IS ? AND date = ? AND processing_date <= ?`
+      ).bind(granularity, bundleId ?? null, d, processingDate)
+    );
+  }
+  let stored = 0;
+  for (const row of rows) {
+    if (superseded.has(row.date)) continue;
+    stored++;
+    statements.push(
+      insert.bind(...SESSION_COLUMNS.map((c) => (c in envelope ? envelope[c] : row[c] ?? null)))
+    );
+  }
+  statements.push(
+    env.DB.prepare(
+      `INSERT INTO analytics_import_log
+         (instance_id, bundle_id, granularity, processing_date, imported_at, row_count)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(instance_id) DO UPDATE SET imported_at = excluded.imported_at,
+                                              row_count = excluded.row_count`
+    ).bind(instanceId, bundleId ?? null, granularity, processingDate, Date.now(), rows.length)
+  );
+
+  // Deletes first, then inserts, then the log — the log is last so a batch
+  // that fails part-way is simply retried next run.
+  const CHUNK = 500;
+  for (let i = 0; i < statements.length; i += CHUNK) {
+    await env.DB.batch(statements.slice(i, i + CHUNK));
+  }
+
+  return json({
+    instance_id: instanceId,
+    stored,
+    dates: dates.length,
+    superseded: [...superseded],
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -1529,6 +1945,16 @@ const DASHBOARD_HOSTNAME = "rev-9000.dgrlabs.co";
 const LEGACY_DASHBOARD_HOSTNAME = "cha-ching.dgrlabs.co";
 
 export default {
+  // Daily (wrangler.toml [triggers]): snapshot yesterday's DAU/WAU/MAU from
+  // first-party telemetry. Errors surface in the Worker's logs; a missed day
+  // is filled by the next run, since the snapshot backfills every day it
+  // doesn't hold.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(
+      snapshotActiveUsers(env).catch((e) => console.error("usage snapshot failed:", e?.message || e))
+    );
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const { pathname } = url;
@@ -1563,6 +1989,41 @@ export default {
           "SELECT report_date, row_count FROM sales_import_log ORDER BY report_date"
         ).all();
         return json({ days: results || [] });
+      }
+      return json({ error: "Method Not Allowed" }, 405);
+    }
+
+    // Manual run of the telemetry snapshot the cron does daily: the first
+    // backfill, and a way to test it. Same bearer as the other imports.
+    if (pathname === "/api/usage-snapshot" && request.method === "POST") {
+      if (!isAuthorized(request, env)) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      try {
+        const computed = await snapshotActiveUsers(env);
+        return json({
+          computed: Object.fromEntries(Object.entries(computed).map(([k, v]) => [k, v.length])),
+          latest: Object.fromEntries(Object.entries(computed).map(([k, v]) => [k, v[v.length - 1] || null])),
+        });
+      } catch (e) {
+        return json({ error: String(e?.message || e) }, 502);
+      }
+    }
+
+    // Analytics (App Sessions) import — same arrangement again.
+    if (pathname === "/api/analytics-import") {
+      if (!isAuthorized(request, env)) {
+        return json({ error: "Unauthorized" }, 401);
+      }
+      if (request.method === "POST") return handleAnalyticsImport(request, env);
+      // GET lists imported instances so the script can skip them.
+      if (request.method === "GET") {
+        await ensureAnalyticsSchema(env);
+        const { results } = await env.DB.prepare(
+          `SELECT instance_id, bundle_id, granularity, processing_date, row_count
+           FROM analytics_import_log ORDER BY processing_date`
+        ).all();
+        return json({ instances: results || [] });
       }
       return json({ error: "Method Not Allowed" }, 405);
     }

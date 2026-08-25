@@ -30,6 +30,17 @@ ACCESS_ENABLED = "1"
 # move billing.
 CHAT_BRIDGE_URL = "https://bridge.dgrlabs.co"
 
+# Cloudflare account the Analytics Engine datasets live in (Overflight's
+# telemetry). Not a secret; the token that reads it is (CF_ANALYTICS_TOKEN).
+CF_ACCOUNT_ID = "85d08ef7cddb0aa4ed18d8fd40e5576b"
+
+# Rolling DAU/WAU/MAU from Overflight's own telemetry, snapshotted once a day
+# into `active_users` (snapshotActiveUsers). 01:20 UTC: yesterday's UTC day is
+# complete and Analytics Engine has ingested it. Reads the AE SQL API with the
+# CF_ANALYTICS_TOKEN secret (Account Analytics Read) against CF_ACCOUNT_ID.
+[triggers]
+crons = ["20 1 * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "cha-ching"

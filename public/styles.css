@@ -318,6 +318,60 @@ body {
   font-size: 9px; letter-spacing: 0.14em; color: var(--ink-3); margin-top: 3px;
 }
 
+/* ── active devices ─────────────────────────────────────────────────── */
+/* A step down again from MRR: three exact Apple figures per app and the
+   30-day daily curve beside them. Provisional (still-settling) days and
+   figures are dimmed, the same way trials and estimates are elsewhere. */
+
+.usage { display: flex; flex-direction: column; gap: 14px; }
+.usage-row {
+  display: grid; grid-template-columns: 120px auto 1fr; gap: 16px; align-items: center;
+}
+.usage-figs { display: flex; gap: 18px; }
+.usage-fig { min-width: 58px; }
+.usage-fig-value {
+  font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1;
+  color: var(--ink); text-shadow: 0 0 14px rgba(53, 224, 255, 0.18);
+}
+.usage-fig-label { font-size: 9.5px; letter-spacing: 0.18em; color: var(--ink-3); margin-top: 3px; }
+.usage-fig-sub { font-size: 9px; letter-spacing: 0.08em; color: var(--ink-3); margin-top: 1px; white-space: nowrap; }
+.usage-fig.provisional .usage-fig-value { color: var(--ink-2); text-shadow: none; }
+.usage-figs .usage-fig:first-child .usage-fig-value { font-size: 32px; }
+
+.usage-chart { min-width: 160px; }
+.usage-spark { width: 100%; height: 60px; display: block; overflow: visible; cursor: crosshair; }
+.usage-line {
+  fill: none; stroke: var(--cyan); stroke-width: 1.6;
+  vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round;
+  filter: drop-shadow(0 0 4px rgba(53, 224, 255, 0.55));
+}
+.usage-line.provisional { stroke: var(--cyan-dim); filter: none; }
+.usage-area { fill: rgba(53, 224, 255, 0.16); stroke: none; }
+.usage-area.provisional { fill: rgba(53, 224, 255, 0.06); }
+.usage-dot { fill: var(--cyan); }
+.usage-dot.provisional { fill: var(--cyan-dim); }
+.usage-head { fill: #fff; filter: drop-shadow(0 0 6px var(--cyan)); }
+.usage-head.provisional { fill: var(--ink-2); filter: none; }
+.usage-cursor { stroke: rgba(215, 236, 242, 0.45); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.usage-axis {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 8px;
+  font-size: 9px; letter-spacing: 0.14em; color: var(--ink-3); margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
+.usage-axis-read { text-align: center; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.usage-spark:hover + .usage-axis .usage-axis-read { color: var(--ink); }
+/* Apple's opt-in figures under a telemetry row: a footnote, sized like one. */
+.usage-apple {
+  grid-column: 1 / -1; font-size: 9px; letter-spacing: 0.14em; color: var(--ink-3);
+  margin-top: -6px; font-variant-numeric: tabular-nums;
+}
+.usage-apple b { color: var(--ink-2); font-weight: 600; }
+
+@media (max-width: 720px) {
+  .usage-row { grid-template-columns: 120px 1fr; }
+  .usage-chart { grid-column: 1 / -1; }
+}
+
 /* ── signal tiles ───────────────────────────────────────────────────── */
 
 .tiles {

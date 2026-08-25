@@ -21,12 +21,16 @@
     "co.dgrlabs.countdowns": "CTD",
     "co.dgrlabs.overflight": "OVF",
     "co.dgrlabs.heymuso": "HMU",
+    "co.dgrlabs.flipflap": "FLP",
+    "co.dgrlabs.bezelbub": "BZL",
   };
   const APP_NAMES = {
     "co.dgrlabs.cdwally": "CD Wally",
     "co.dgrlabs.countdowns": "Countdowns",
     "co.dgrlabs.overflight": "Overflight",
     "co.dgrlabs.heymuso": "HeyMuso",
+    "co.dgrlabs.flipflap": "Flip Flap",
+    "co.dgrlabs.bezelbub": "Bezelbub",
   };
 
   const REVENUE_TYPES = new Set(["DID_RENEW", "ONE_TIME_CHARGE", "SUBSCRIBED", "OFFER_REDEEMED"]);
@@ -306,6 +310,7 @@
       : `<div class="chat-hello">NO EVENTS IN WINDOW</div>`;
 
     renderMrr();
+    renderUsage();
     renderSubscribers();
 
     // feed
@@ -437,6 +442,194 @@
 
     $("#mrr-axis-from").textContent = localDate(trend[0].t);
     $("#mrr-axis-peak").textContent = `PEAK ${usd(peak)}`;
+  }
+
+  // ── active devices ────────────────────────────────────────────────────
+  // Two sources, and the row says which it is:
+  //   TELEMETRY — the app's own per-install reporting (Overflight). Exact
+  //   rolling DAU / WAU / MAU over every install, recalculated daily; the
+  //   curve is the rolling MAU itself.
+  //   APPLE OPT-IN — App Store Connect's App Sessions report: Apple's own
+  //   distinct counts per day / Monday–Sunday week / calendar month, over
+  //   the ~fifth of devices whose users share analytics. The curve is daily
+  //   actives, because a rolling figure isn't in that data and adding up
+  //   daily uniques would count a daily user thirty times.
+  // Live state, not windowed.
+
+  const USAGE_W = 320;
+  const USAGE_H = 60;
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+
+  // "2026-08-24" → "08-24"; kept short because it sits in a 9px caption.
+  const shortDay = (iso) => iso.slice(5);
+  const monthLabel = (iso) => `${MONTHS[Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
+
+  // Lays the trend out on a fixed 30-slot axis so a missing day is a visible
+  // gap (Apple publishes nothing for a day under five opted-in users) rather
+  // than a line quietly bridging it.
+  // `series` is the trend array and `value` picks the plotted number out of
+  // a point; the result is normalised to { devices, sessions, provisional }.
+  function usageSpark(series, u, value) {
+    const slots = [];
+    const start = Date.parse(`${u.trend_start}T00:00:00Z`);
+    const byDay = Object.fromEntries((series || []).map((p) => [p.d, p]));
+    for (let i = 0; i < u.trend_days; i++) {
+      const d = new Date(start + i * 86400000).toISOString().slice(0, 10);
+      const p = byDay[d];
+      slots.push(p ? { d, devices: value(p), sessions: p.sessions, provisional: !!p.provisional } : { d, devices: null });
+    }
+    const peak = Math.max(1, ...slots.map((p) => p.devices || 0));
+    const x = (i) => (i / (u.trend_days - 1)) * USAGE_W;
+    const y = (v) => USAGE_H - 3 - (v / peak) * (USAGE_H - 8);
+
+    // Contiguous runs become separate segments; settled and provisional days
+    // get their own strokes so the still-filling tail reads as such.
+    let lines = "";
+    let area = "";
+    let run = [];
+    const flush = () => {
+      if (run.length) {
+        const pts = run.map((p) => `${x(p.i).toFixed(1)},${y(p.devices).toFixed(1)}`);
+        const prov = run.every((p) => p.provisional);
+        if (run.length > 1) {
+          lines += `<polyline class="usage-line${prov ? " provisional" : ""}" points="${pts.join(" ")}"/>`;
+          area += `<path class="usage-area${prov ? " provisional" : ""}" d="M${x(run[0].i).toFixed(1)},${USAGE_H} L${pts.join(" L")} L${x(run[run.length - 1].i).toFixed(1)},${USAGE_H} Z"/>`;
+        } else {
+          lines += `<circle class="usage-dot${prov ? " provisional" : ""}" cx="${x(run[0].i).toFixed(1)}" cy="${y(run[0].devices).toFixed(1)}" r="2"/>`;
+        }
+      }
+      run = [];
+    };
+    slots.forEach((p, i) => {
+      if (p.devices == null) { flush(); return; }
+      // A settled→provisional boundary shares its point with both runs, so
+      // the line stays continuous while the stroke changes.
+      if (run.length && run[run.length - 1].provisional !== !!p.provisional) {
+        const last = run[run.length - 1];
+        flush();
+        run.push(last);
+      }
+      run.push({ ...p, i, provisional: !!p.provisional });
+    });
+    flush();
+
+    const lastIdx = slots.map((p) => p.devices != null).lastIndexOf(true);
+    const head = lastIdx >= 0
+      ? `<circle class="usage-head${slots[lastIdx].provisional ? " provisional" : ""}" r="2.6" cx="${x(lastIdx).toFixed(1)}" cy="${y(slots[lastIdx].devices).toFixed(1)}"/>`
+      : "";
+    return { svg: area + lines + head, slots, peak };
+  }
+
+  function renderUsage() {
+    const u = stats.usage;
+    const box = $("#usage");
+    if (!u || !Object.keys(u.apps || {}).length) {
+      box.innerHTML = `<div class="chat-hello">AWAITING APPLE ANALYTICS — RUN scripts/analytics-import.mjs</div>`;
+      $("#usage-note").textContent = "OPT-IN DEVICES · NOT WINDOWED";
+      return;
+    }
+    $("#usage-note").textContent = `OPT-IN DEVICES · APPLE REPORT ${u.watermark || "—"} · NOT WINDOWED`;
+
+    // Biggest audience first; an app with only a monthly figure still sorts
+    // by it. Ties (all null) fall back to name so the order is stable.
+    const entries = Object.entries(u.apps).sort(
+      (a, b) =>
+        ((b[1].mau?.devices ?? b[1].wau?.devices ?? b[1].dau?.devices ?? -1) -
+          (a[1].mau?.devices ?? a[1].wau?.devices ?? a[1].dau?.devices ?? -1)) ||
+        a[1].name.localeCompare(b[1].name)
+    );
+
+    // The plotted series per app: rolling MAU where the app reports for
+    // itself, Apple's daily actives otherwise.
+    const seriesFor = (a) =>
+      a.telemetry
+        ? { points: a.telemetry.trend, value: (p) => p.mau, label: "MAU · ROLLING 30D", unit: "MAU" }
+        : { points: a.trend, value: (p) => p.devices, label: "DAILY ACTIVE DEVICES", unit: "DEVICES" };
+
+    box.innerHTML = entries
+      .map(([id, a]) => {
+        const series = seriesFor(a);
+        const spark = usageSpark(series.points, u, series.value);
+        const fig = (label, f, sub) => `
+          <div class="usage-fig${f?.provisional ? " provisional" : ""}">
+            <div class="usage-fig-value">${f ? num(f.devices) : "—"}</div>
+            <div class="usage-fig-label">${label}</div>
+            <div class="usage-fig-sub">${f ? sub(f) : "NOT YET REPORTED"}</div>
+          </div>`;
+        const t = a.telemetry;
+        const figs = t
+          ? `${fig("MAU", { devices: t.mau }, () => `30D TO ${shortDay(t.date)}`)}
+             ${fig("WAU", { devices: t.wau }, () => `7D TO ${shortDay(t.date)}`)}
+             ${fig("DAU", { devices: t.dau }, () => `${shortDay(t.date)} UTC`)}`
+          : `${fig("MAU", a.mau, (f) => monthLabel(f.period))}
+             ${fig("WAU", a.wau, (f) => `WK OF ${shortDay(f.period)}`)}
+             ${fig("DAU", a.dau, (f) => `${shortDay(f.period)}${f.provisional ? " · SETTLING" : ""}`)}`;
+        // With telemetry as the headline, Apple's opt-in figures become the
+        // footnote — worth keeping in view, because their ratio to the real
+        // count is the opt-in rate.
+        const appleNote = t && (a.mau || a.wau || a.dau)
+          ? `<div class="usage-apple">APPLE OPT-IN${a.mau ? ` · ${monthLabel(a.mau.period)} <b>${num(a.mau.devices)}</b>` : ""}${a.wau ? ` · WK ${shortDay(a.wau.period)} <b>${num(a.wau.devices)}</b>` : ""}${a.dau ? ` · ${shortDay(a.dau.period)} <b>${num(a.dau.devices)}</b>` : ""}</div>`
+          : "";
+        return `
+        <div class="usage-row${t ? " telemetry" : ""}" data-app="${id}">
+          <div class="app-id">
+            <div class="app-name">${a.name}</div>
+            <div class="app-code">${APP_CODES[id] || "—"} · ${t ? "TELEMETRY" : "APPLE OPT-IN"}</div>
+          </div>
+          <div class="usage-figs">${figs}</div>
+          <div class="usage-chart">
+            <svg class="usage-spark" viewBox="0 0 ${USAGE_W} ${USAGE_H}" preserveAspectRatio="none" aria-hidden="true">
+              ${spark.svg}
+              <line class="usage-cursor" x1="-10" x2="-10" y1="0" y2="${USAGE_H}"/>
+            </svg>
+            <div class="usage-axis">
+              <span class="usage-axis-from">${shortDay(u.trend_start)}</span>
+              <span class="usage-axis-read">${series.label}</span>
+              <span class="usage-axis-peak">PEAK ${num(spark.peak)}</span>
+            </div>
+          </div>
+          ${appleNote}
+        </div>`;
+      })
+      .join("");
+
+    // Hover readout: the cursor snaps to the nearest day and the axis line
+    // turns into that day's figures — the values are also in the analyst's
+    // reach via app_sessions, so nothing is hover-only.
+    for (const row of box.querySelectorAll(".usage-row")) {
+      const app = u.apps[row.dataset.app];
+      const series = seriesFor(app);
+      const { slots } = usageSpark(series.points, u, series.value);
+      const svg = row.querySelector(".usage-spark");
+      const cursor = row.querySelector(".usage-cursor");
+      const read = row.querySelector(".usage-axis-read");
+      const from = row.querySelector(".usage-axis-from");
+      const peak = row.querySelector(".usage-axis-peak");
+      const show = (i) => {
+        const p = slots[i];
+        const xPos = (i / (u.trend_days - 1)) * USAGE_W;
+        cursor.setAttribute("x1", xPos);
+        cursor.setAttribute("x2", xPos);
+        read.textContent = p.devices == null
+          ? `${shortDay(p.d)} · NO REPORT`
+          : `${shortDay(p.d)} · ${num(p.devices)} ${series.unit} · ${num(p.sessions)} SESSIONS${p.provisional ? " · SETTLING" : ""}`;
+        from.style.visibility = "hidden";
+        peak.style.visibility = "hidden";
+      };
+      const hide = () => {
+        cursor.setAttribute("x1", -10);
+        cursor.setAttribute("x2", -10);
+        read.textContent = series.label;
+        from.style.visibility = "";
+        peak.style.visibility = "";
+      };
+      svg.addEventListener("pointermove", (e) => {
+        const r = svg.getBoundingClientRect();
+        const i = Math.round(((e.clientX - r.left) / r.width) * (u.trend_days - 1));
+        show(Math.max(0, Math.min(u.trend_days - 1, i)));
+      });
+      svg.addEventListener("pointerleave", hide);
+    }
   }
 
   // ── subscriber base ───────────────────────────────────────────────────
