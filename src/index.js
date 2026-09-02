@@ -107,6 +107,16 @@ function countryFlag(alpha3) {
   );
 }
 
+// "co.dgrlabs.overflight.pro.monthly.v2" -> "Monthly"
+function planName(productId) {
+  if (!productId) return "?";
+  const parts = productId
+    .split(".")
+    .slice(3) // drop co.dgrlabs.<app>
+    .filter((p) => p !== "pro" && !/^v\d+$/.test(p));
+  return parts.map((p) => p.charAt(0).toUpperCase() + p.slice(1)).join(" ") || productId;
+}
+
 function formatPrice(price, currency) {
   if (price == null || currency == null) return null;
   const amount = (price / 1000).toFixed(2);
@@ -164,7 +174,6 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
 
   const sandboxTag = isSandbox ? " [SANDBOX]" : "";
   const familyTag = transaction?.inAppOwnershipType === "FAMILY_SHARED" ? " (Family Shared)" : "";
-  const title = `${emoji} ${name} — ${description}${familyTag}${sandboxTag}`;
   const lines = [];
 
   if (transaction) {
@@ -193,21 +202,26 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
 
   // DID_CHANGE_RENEWAL_PREF: the transaction above is the plan the customer is
   // on NOW; the plan they switched to is renewal info's autoRenewProductId.
-  // Apple files any change of duration (monthly -> yearly) as DOWNGRADE, so
-  // without this line a monthly-to-yearly switch reads like bad news.
-  if (
+  // Apple's subtype is about timing, not value — any change of duration
+  // (monthly -> yearly) is filed as DOWNGRADE because it waits for the next
+  // renewal — so it is misleading in the message. Say what actually changed.
+  const planChange =
     notificationType === "DID_CHANGE_RENEWAL_PREF" &&
     renewalInfo?.autoRenewProductId &&
-    renewalInfo.autoRenewProductId !== transaction?.productId
-  ) {
-    const when = subtype === "DOWNGRADE" ? " (at next renewal)" : subtype === "UPGRADE" ? " (immediately)" : "";
-    lines.push(`Next plan: ${renewalInfo.autoRenewProductId}${when}`);
+    renewalInfo.autoRenewProductId !== transaction?.productId;
+  if (planChange) {
+    description = `Plan Changed: ${planName(transaction.productId)} → ${planName(renewalInfo.autoRenewProductId)}`;
+    lines.push(`Next plan: ${renewalInfo.autoRenewProductId}`);
+    if (subtype === "DOWNGRADE") lines.push("Takes effect at next renewal");
+    else if (subtype === "UPGRADE") lines.push("Takes effect immediately");
   }
 
   const subtypeInDescription = EVENT_DESCRIPTIONS[notificationType]?.[subtype] != null;
-  if (!isRevenue && !isRefund && subtype && !subtypeInDescription) {
+  if (!isRevenue && !isRefund && subtype && !subtypeInDescription && !planChange) {
     lines.push(`Subtype: ${subtype}`);
   }
+
+  const title = `${emoji} ${name} — ${description}${familyTag}${sandboxTag}`;
 
   return {
     attachments: [
