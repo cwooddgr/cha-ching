@@ -579,3 +579,27 @@ hidden UPDATE, stacked statements and `WITH`-prefixed DELETE.
 Rollback: `git revert` + `wrangler deploy`. The Worker would then need
 `ANTHROPIC_API_KEY` back — which silently returns billing to the API, so do it
 deliberately rather than as a reflex.
+
+## 2026-09-02 — Plan-change Slack messages name the actual switch
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-09-02
+> **Status:** decided-by-user
+
+A `DID_CHANGE_RENEWAL_PREF` for an Overflight subscriber arrived with subtype
+`DOWNGRADE` and the message showed only the current monthly transaction, so it
+read as bad news. It was the opposite: a monthly subscriber who had turned
+auto-renew off on 2026-08-15 switched to yearly (auto-renew back on, billing
+at the 2026-09-12 renewal). Apple files *any* change of duration as
+`DOWNGRADE` because it applies at the next renewal; `UPGRADE` means "same
+duration, applies immediately". The subtype is about timing, not value.
+
+Charlie called the DOWNGRADE line misleading, so `buildSlackMessage` now
+describes the switch itself for this notification type: title
+`Plan Changed: Monthly → Yearly` (names derived from the product ids via
+`planName`), a `Next plan:` line from renewal info's `autoRenewProductId`,
+and a `Takes effect at next renewal` / `Takes effect immediately` line from
+the subtype. The `Subtype:` line is suppressed for plan changes only; the
+subtype is still stored in the `subtype` column and `raw`. Commits `60604e8`
+(first cut, Next plan line) and `f5b7479` (final form). Every other
+notification type renders exactly as before.
