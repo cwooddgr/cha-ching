@@ -191,6 +191,19 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
     }
   }
 
+  // DID_CHANGE_RENEWAL_PREF: the transaction above is the plan the customer is
+  // on NOW; the plan they switched to is renewal info's autoRenewProductId.
+  // Apple files any change of duration (monthly -> yearly) as DOWNGRADE, so
+  // without this line a monthly-to-yearly switch reads like bad news.
+  if (
+    notificationType === "DID_CHANGE_RENEWAL_PREF" &&
+    renewalInfo?.autoRenewProductId &&
+    renewalInfo.autoRenewProductId !== transaction?.productId
+  ) {
+    const when = subtype === "DOWNGRADE" ? " (at next renewal)" : subtype === "UPGRADE" ? " (immediately)" : "";
+    lines.push(`Next plan: ${renewalInfo.autoRenewProductId}${when}`);
+  }
+
   const subtypeInDescription = EVENT_DESCRIPTIONS[notificationType]?.[subtype] != null;
   if (!isRevenue && !isRefund && subtype && !subtypeInDescription) {
     lines.push(`Subtype: ${subtype}`);
