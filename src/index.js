@@ -779,13 +779,16 @@ async function handleStats(env) {
   // What Apple ACTUALLY keeps, per app. The 85% small-business figure is the
   // commission alone; foreign storefronts also have tax taken off the top
   // before proceeds, so the real rate is lower and varies with where an app
-  // sells. Measured 2026-08-10: CD Wally 77.5%, Overflight 81.9% — nobody is
+  // sells. Measured 2026-08-10: CD Wally 82.4%, Overflight 81.9% — nobody is
   // at 85%, and assuming it invented ~$155 of proceeds across the two.
   keys.push("rates");
   statements.push(
     env.DB.prepare(
       `SELECT s.bundle_id,
-              SUM(s.units * s.customer_price * COALESCE(fc.usd_rate, 0)) AS gross,
+              -- ABS: a refund row is negative units AND negative customer
+              -- price (proceeds stay positive), so the raw product would add
+              -- the refund to gross instead of taking it off.
+              SUM(s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0)) AS gross,
               SUM(s.units * s.proceeds_per_unit * COALESCE(fp.usd_rate, 0)) AS net
        FROM sales s
        LEFT JOIN fx_rates fc ON fc.currency = s.customer_currency
@@ -808,9 +811,10 @@ async function handleStats(env) {
          SELECT s.bundle_id AS bundle_id, s.sku AS product_id,
                 SUM(s.units) AS owners,
                 SUM(CASE WHEN s.proceeds_per_unit = 0 THEN s.units ELSE 0 END) AS offer_code,
-                SUM(s.units * s.customer_price * COALESCE(fxc.usd_rate, 0)) * 1000 AS gross_millis,
+                -- ABS for the same refund-sign reason as the rates query.
+                SUM(s.units * ABS(s.customer_price) * COALESCE(fxc.usd_rate, 0)) * 1000 AS gross_millis,
                 SUM(s.units * s.proceeds_per_unit * COALESCE(fxp.usd_rate, 0)) * 1000 AS proceeds_millis,
-                SUM(CASE WHEN s.customer_price > 0 AND fxc.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+                SUM(CASE WHEN s.customer_price != 0 AND fxc.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
          FROM sales s
          LEFT JOIN fx_rates fxc ON fxc.currency = s.customer_currency
          LEFT JOIN fx_rates fxp ON fxp.currency = s.proceeds_currency

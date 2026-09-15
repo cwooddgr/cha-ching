@@ -153,9 +153,11 @@ ESTIMATE of gross customer price — no Apple commission, static FX.
 ⚠️ **Don't use 85% for proceeds.** The small-business rate is the commission
 alone; foreign storefronts also have tax taken off before proceeds, so the real
 figure is lower and differs by app with its storefront mix. Measured from
-Apple's own numbers on 2026-08-10: **CD Wally 77.5%, Overflight 81.9%, blended
-81.2%** — assuming 85% invented ~$155 across the two. Derive the rate from
-`sales` (`SUM(units*proceeds_per_unit*fx) / SUM(units*customer_price*fx)`)
+Apple's own numbers through 2026-08-10: **CD Wally 82.4%, Overflight 81.9%,
+blended 82.0%** — assuming 85% invented ~$122 across the two. (The figures first
+recorded, 77.5% and 81.2%, carried the refund-sign bug below; corrected
+2026-09-15.) Derive the rate from
+`sales` (`SUM(units*proceeds_per_unit*fx) / SUM(units*ABS(customer_price)*fx)`)
 rather than assuming one, and prefer `sales.proceeds_per_unit` outright when
 the period is covered. `/api/stats` does this per app and reports the blended
 rate as `meta.proceeds_rate`.
@@ -268,6 +270,13 @@ rather than appended so restatements land cleanly.
   `proceeds_currency` for net.
 - **Refunds are negative `units`** against the original sale's date. Never
   filter them out — summing is what nets them.
+- ⚠️ **A refund row's `customer_price` is negative too** (Apple's Summary
+  Sales Report reference: "negative values for Units and Customer Price, and
+  positive values for Developer Proceeds"). So gross is
+  `units * ABS(customer_price)`: the plain product is negative × negative and
+  ADDS the refund to gross. Net needs nothing, `units * proceeds_per_unit`
+  already comes out negative. One such row so far (a CD Wally wallet48, A$29.99,
+  2026-04-11); counting it the wrong way put CD Wally's gross $39.59 high.
 - **`report_date` is Pacific Time; `signed_date` is UTC.** Never join the two
   tables on a date, and never assume a day lines up across them.
 - **The reports lag a day.** The newest is yesterday PT; `sales_import_log`

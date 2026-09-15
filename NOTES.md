@@ -1,5 +1,32 @@
 # cha-ching — notes
 
+## Refunds were adding to gross in the sales-backed figures
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-09-15
+> **Status:** decided-by-user (Charlie: "just fix the bug you found"); the fix itself is proposed-by-agent
+
+Apple writes a refund into the Summary Sales Report as negative `units` AND a
+negative `customer_price`, with `proceeds_per_unit` left positive (confirmed
+against Apple's Summary Sales Report reference, 2026-09-15). Both gross sums in
+`/api/stats` (the per-app `rates` query and the `unlocks` query) multiplied
+`units * customer_price`, so a refund came out positive and was added to gross.
+Net was always right, since `units * proceeds_per_unit` goes negative on its own.
+
+Only one refund row exists: a CD Wally wallet48, A$29.99, on 2026-04-11. It
+put CD Wally's gross $39.59 high ($711.96 against a true $672.38 today), which
+dragged its measured proceeds rate down to 77.4% from a true 82.0%, and the
+CUSTOMER BASE panel showed the wallet48 row's gross high by the same amount.
+Overflight and Countdowns have no refunds in `sales` and didn't move.
+
+Fixed with `ABS(customer_price)` in both queries, and the unknown-FX check now
+flags any non-zero price rather than only positive ones. I also corrected the
+2026-08-10 rates quoted in CLAUDE.md and the code comment, which were measured
+with the bug: through 2026-08-10, CD Wally was **82.4%** (not 77.5%) and blended
+**82.0%** (not 81.2%), and the 85% assumption invented about **$122**, not $155.
+The historical entries below keep their original figures, each marked where it
+was wrong.
+
 ## Active users: Overflight's telemetry for MAU, Apple's reports for the rest
 
 > **Author:** Claude Code (coder)
@@ -177,6 +204,10 @@ rather than answering from memory turned up a real error: **nothing is at 85%.**
 | CD Wally | $664.73 | $514.96 | $565.02 | **77.5%** |
 | Overflight | $3,417.41 | $2,799.49 | $2,904.79 | **81.9%** |
 
+*(Corrected 2026-09-15: CD Wally's gross here counted a refund as a sale. True
+figures were $625.15 gross, 82.4%, and ~$122 invented in total. See the
+refund-sign entry at the top.)*
+
 The small-business rate is the commission alone. Foreign storefronts also have
 tax deducted before proceeds, so the true fraction is lower and varies with
 where an app sells — CD Wally sells heavily outside the US and lands 7.5 points
@@ -227,7 +258,7 @@ Summary Sales reports, 4,973 rows, cover the entire business.
 
 | | notifications | sales reports |
 |---|---|---|
-| CD Wally unlocks | 23 / $465.56 gross | **31 / $664.73** |
+| CD Wally unlocks | 23 / $465.56 gross | **31 / $664.73** (true $625.15; a refund was added to gross, corrected 2026-09-15) |
 | Countdowns unlocks | 0 | **4 / $24.14** |
 | Overflight lifetime | 31 / $2,237.41 | 30 / $2,167.42 |
 
