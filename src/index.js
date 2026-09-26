@@ -9,9 +9,9 @@
 // Two consequences worth knowing before editing this file:
 //   * The analyst's knowledge — schema, and the counting rules that make the
 //     numbers correct — moved OUT of a system-prompt constant here and into
-//     CLAUDE.md at the root of this repo, because that is what Claude Code
-//     loads as context. If you change how a figure should be counted, change
-//     it there. Losing those rules is how you get revenue inflated by
+//     docs/analyst.md, which CLAUDE.md at the root of this repo imports,
+//     because CLAUDE.md is what Claude Code loads as context. If you change
+//     how a figure should be counted, change it there. Losing those rules is how you get revenue inflated by
 //     FAMILY_SHARED duplicates again.
 //   * The agent reads D1 through /api/query below, not through a binding. The
 //     SELECT-only guard that used to sit in front of the chat tool now sits in
@@ -1280,7 +1280,7 @@ function isoDay(ms) {
  *   dau — unique devices on the latest reported day
  * plus a 30-day daily trend. There is deliberately no rolling-30-day figure:
  * Apple does not expose one through the API, and summing daily uniques over
- * 30 days counts a daily user thirty times. See CLAUDE.md.
+ * 30 days counts a daily user thirty times. See docs/analyst.md.
  */
 async function usageStats(env, now) {
   const trendStart = isoDay(now - (USAGE_TREND_DAYS - 1) * 86400000);

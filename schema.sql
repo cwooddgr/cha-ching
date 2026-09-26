@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_original_txn ON notifications (orig
 -- Apple Summary Sales reports (App Store Connect API, /v1/salesReports)
 -- ---------------------------------------------------------------------------
 -- One row per line of a DAILY Summary Sales report. Imported by
--- scripts/sales-import.mjs; see CLAUDE.md for the counting rules.
+-- scripts/sales-import.mjs; see docs/analyst.md for the counting rules.
 --
 -- Why this exists alongside `notifications`: App Store Server Notification
 -- history only reaches back 180 days, which truncates CD Wally's lifetime and
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS sales_import_log (
 -- dimensions within the row's period (a day, a Monday–Sunday week, or a
 -- calendar month). Summing rows within one (granularity, bundle_id, date)
 -- gives that period's active devices; summing ACROSS dates does not give
--- anything — a device active on ten days is ten rows. See CLAUDE.md.
+-- anything — a device active on ten days is ten rows. See docs/analyst.md.
 CREATE TABLE IF NOT EXISTS app_sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   granularity TEXT NOT NULL,       -- 'DAILY' | 'WEEKLY' | 'MONTHLY'

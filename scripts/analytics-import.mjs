@@ -13,7 +13,7 @@
 // analytics with developers, and publishes a report only when at least five
 // users contributed — an app with a quiet day simply has no row for it. And
 // there is no rolling "active in the last 30 days" figure here; that number
-// exists only in the App Store Connect web UI. See CLAUDE.md before deriving
+// exists only in the App Store Connect web UI. See docs/analyst.md before deriving
 // one.
 //
 // HOW APPLE PUBLISHES IT
