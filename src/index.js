@@ -27,6 +27,8 @@ const APP_NAMES = {
   // reports, so they need a name once those panels show them.
   "co.dgrlabs.flipflap": "Flip Flap",
   "co.dgrlabs.bezelbub": "Bezelbub",
+  "co.dgrlabs.OnThisDay": "On This Day",
+  "co.dgrlabs.bounce": "Bounce",
 };
 
 const REVENUE_EVENTS = new Set([

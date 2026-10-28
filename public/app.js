@@ -23,6 +23,8 @@
     "co.dgrlabs.heymuso": "HMU",
     "co.dgrlabs.flipflap": "FLP",
     "co.dgrlabs.bezelbub": "BZL",
+    "co.dgrlabs.OnThisDay": "OTD",
+    "co.dgrlabs.bounce": "BNC",
   };
   const APP_NAMES = {
     "co.dgrlabs.cdwally": "CD Wally",
@@ -31,6 +33,8 @@
     "co.dgrlabs.heymuso": "HeyMuso",
     "co.dgrlabs.flipflap": "Flip Flap",
     "co.dgrlabs.bezelbub": "Bezelbub",
+    "co.dgrlabs.OnThisDay": "On This Day",
+    "co.dgrlabs.bounce": "Bounce",
   };
 
   const REVENUE_TYPES = new Set(["DID_RENEW", "ONE_TIME_CHARGE", "SUBSCRIBED", "OFFER_REDEEMED"]);
