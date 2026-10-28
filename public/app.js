@@ -550,13 +550,16 @@
     const newestMonth = new Date(Date.UTC(lagged.getUTCFullYear(), lagged.getUTCMonth() - 1, 1))
       .toISOString().slice(0, 10);
     const newestWeekFloor = new Date(nowMs - 21 * 86400000).toISOString().slice(0, 10);
-    const shown = Object.entries(u.apps).filter(
-      ([, a]) =>
-        a.telemetry ||
-        (a.trend && a.trend.length) ||
-        (a.mau && a.mau.period >= newestMonth) ||
-        (a.wau && a.wau.period >= newestWeekFloor)
-    );
+    // The same test blanks a stale week or month on an app that is shown for
+    // other reasons, so Countdowns' February week can't sit beside a current
+    // month as if it were this week.
+    const shown = Object.entries(u.apps)
+      .map(([id, a]) => [id, {
+        ...a,
+        mau: a.mau && a.mau.period >= newestMonth ? a.mau : null,
+        wau: a.wau && a.wau.period >= newestWeekFloor ? a.wau : null,
+      }])
+      .filter(([, a]) => a.telemetry || (a.trend && a.trend.length) || a.mau || a.wau);
     if (!shown.length) {
       box.innerHTML = `<div class="chat-hello">NO APP WITH CURRENT USAGE DATA</div>`;
       return;
