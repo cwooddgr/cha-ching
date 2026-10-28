@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code working in this repo, and the operating context for the **analyst agent** behind rev-9000.dgrlabs.co's ANALYST CONSOLE. That agent is Claude Code (`claude -p`) running on bigiron with this directory as its working directory (see `house/bin/agent-bridge`), so this file and the manual it imports below are its system prompt in everything but name. **If you change how a figure is counted, change it in `docs/analyst.md`**: that is the copy that reaches the model.
+Guidance for Claude Code working in this repo, and the operating context for the **analyst agent** behind rev-9000.dgrlabs.co's ANALYST CONSOLE. That agent is Claude Code (`claude -p`) running on dgrhub with this directory as its working directory (see `house/bin/agent-bridge`), so this file and the manual it imports below are its system prompt in everything but name. **If you change how a figure is counted, change it in `docs/analyst.md`**: that is the copy that reaches the model.
 
 **cha-ching**: a Cloudflare Worker that receives App Store Server Notifications V2 for every DGR Labs app, stores each in D1 (`cha-ching`), posts formatted messages to Slack, and serves the FUI analytics dashboard at rev-9000.dgrlabs.co (cha-ching.dgrlabs.co redirects). Tier 3, but live production telemetry for real revenue: treat the data as authoritative and the ingest path as fragile.
 
@@ -17,7 +17,7 @@ Guidance for Claude Code working in this repo, and the operating context for the
 
 ```bash
 ccq "SELECT …"            # read D1 via the Worker's /api/query: one SELECT or WITH…SELECT, JSON rows, 200-row cap
-ccq --schema             # ccq is on PATH on bigiron; here: npm run ccq -- "SELECT …" (scripts/ccq.mjs)
+ccq --schema             # ccq is on PATH on dgrhub; here: npm run ccq -- "SELECT …" (scripts/ccq.mjs)
 npx wrangler deploy       # deploy the Worker
 node scripts/sales-import.mjs       # Apple daily sales reports → sales (launchd weekly, Mondays 10:00)
 node scripts/analytics-import.mjs   # App Sessions report → app_sessions (launchd daily 10:15 and 18:15)
@@ -26,7 +26,7 @@ node scripts/analytics-import.mjs   # App Sessions report → app_sessions (laun
 ## Architecture in brief
 
 - `src/index.js` is the whole Worker: ingest, Slack, `/api/stats`, the analyst endpoints (`/api/query` behind the SELECT-only guard), and the 01:20 UTC cron that snapshots Overflight telemetry into `active_users`. `public/` is the dashboard, no build step.
-- The console's chat proxies to `agent-bridge` on bigiron (Claude Code on Charlie's subscription since 2026-08-09).
+- The console's chat proxies to `agent-bridge` on dgrhub (Claude Code on Charlie's subscription since 2026-08-09).
 - Launchd agents for the imports: `scripts/co.dgrlabs.cha-ching.*.plist`.
 
 ## Rules that have bitten us

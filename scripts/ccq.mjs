@@ -4,12 +4,12 @@
 // WHY THIS EXISTS
 // The Analyst Console used to run inside the Worker, where Claude got a
 // `query_db` tool wired straight to the D1 binding. That console now runs as
-// Claude Code on bigiron so it bills Charlie's subscription rather than the
+// Claude Code on dgrhub so it bills Charlie's subscription rather than the
 // Anthropic API (decided-by-user 2026-08-09) — and an agent on a box has no D1
 // binding, only a shell. This is the tool that replaces it.
 //
 // WHY IT TALKS TO OUR WORKER, NOT TO CLOUDFLARE'S D1 API
-// Going direct would need a Cloudflare API token on bigiron, and Cloudflare has
+// Going direct would need a Cloudflare API token on dgrhub, and Cloudflare has
 // no read-only D1 scope — the token would carry D1:Edit, i.e. a write handle to
 // production revenue data sitting in a file. Instead this posts to the Worker's
 // own /api/query, which is bearer-authenticated with the DASHBOARD_SECRET that

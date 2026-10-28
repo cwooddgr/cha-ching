@@ -634,3 +634,11 @@ the subtype. The `Subtype:` line is suppressed for plan changes only; the
 subtype is still stored in the `subtype` column and `raw`. Commits `60604e8`
 (first cut, Next plan line) and `f5b7479` (final form). Every other
 notification type renders exactly as before.
+
+## 2026-10-28: bigiron → dgrhub
+
+> **Author:** Claude Code (coder) · **Date:** 2026-10-28 · **Status:** decided-by-user (Charlie: "bigiron has been decomissioned. dgrhub replaced it.")
+
+bigiron is gone. `agent-bridge` and `ccq` now live on dgrhub (I checked: `/usr/local/bin/agent-bridge`, and `ccq` answers there). The current docs and comments, plus the console's BUSY message, now say dgrhub. Older entries above still say bigiron because that is where things ran at the time. The bridge URL (`bridge.dgrlabs.co`) never named the host, so nothing in config changed.
+
+Same day: On This Day (`co.dgrlabs.OnThisDay`) and Bounce (`co.dgrlabs.bounce`) got display names and codes (OTD, BNC). The analytics import pulls every app in App Store Connect, so both were already in `app_sessions`, and On This Day was showing its raw bundle ID on ACTIVE DEVICES. Revenue wiring for them is still shelved (Charlie, 2026-09-15).

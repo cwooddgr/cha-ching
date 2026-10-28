@@ -4,7 +4,7 @@
 
 Guidance for Claude Code working in this repo — and, just as importantly, the
 operating context for the **analyst agent** behind rev-9000.dgrlabs.co's
-ANALYST CONSOLE panel. That agent is Claude Code running on bigiron with this
+ANALYST CONSOLE panel. That agent is Claude Code running on dgrhub with this
 directory as its working directory (see `house/bin/agent-bridge`), so this
 file *is* its system prompt in everything but name.
 
@@ -57,6 +57,6 @@ the ingest path as fragile.
   asleep costs nothing — the next one backfills it.
 - Deploy: `npx wrangler deploy`. Secrets: `SLACK_WEBHOOK_URL`,
   `DASHBOARD_SECRET`, `CHAT_TOKEN`, `QUERY_TOKEN`, `CF_ANALYTICS_TOKEN`.
-- The console's chat proxies to `agent-bridge` on bigiron; there is no
+- The console's chat proxies to `agent-bridge` on dgrhub; there is no
   Anthropic API key in this project any more, and adding one back would move
   billing off Charlie's subscription.

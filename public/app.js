@@ -827,7 +827,7 @@
    *
    * The console used to POST the whole conversation every turn, because the
    * Worker was calling the Anthropic API and the API is stateless. It now
-   * proxies to Claude Code on bigiron, which keeps the conversation itself and
+   * proxies to Claude Code on dgrhub, which keeps the conversation itself and
    * resumes it by id — so we send one message and the id we were given back.
    * That also keeps the (large) CLAUDE.md prefix warm in the prompt cache
    * instead of re-reading it cold on every question.

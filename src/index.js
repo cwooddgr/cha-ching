@@ -2,7 +2,7 @@
 // dashboard and a Claude analyst console over the stored data.
 //
 // The console no longer calls the Anthropic API from here. It proxies to
-// agent-bridge on bigiron, which runs Claude Code on Charlie's subscription
+// agent-bridge on dgrhub, which runs Claude Code on Charlie's subscription
 // (decided-by-user 2026-08-09) — the same brain the house dashboard's CMD
 // panel talks to, on a different profile. See netbot/bin/agent-bridge.
 //
@@ -1414,7 +1414,7 @@ async function usageStats(env, now) {
 // Two endpoints, pulling in opposite directions on purpose:
 //
 //   /api/query  is reachable on workers.dev with a bearer token, because the
-//               agent asking the questions runs on bigiron and cannot clear
+//               agent asking the questions runs on dgrhub and cannot clear
 //               Cloudflare Access. Same shape as /api/backfill, same secret.
 //   /api/chat   is reachable ONLY on the Access-guarded hostname, because it
 //               is the human's end of the conversation.
@@ -1461,7 +1461,7 @@ async function runQuery(env, sql) {
  * POST /api/query — the analyst agent's only route to the database.
  *
  * Bearer-authenticated and served on workers.dev, mirroring /api/backfill:
- * bigiron is a script, not a browser, and cannot complete an Access one-time
+ * dgrhub is a script, not a browser, and cannot complete an Access one-time
  * PIN. The SELECT-only guard above is what makes that acceptable.
  */
 async function handleQuery(request, env) {
@@ -1480,7 +1480,7 @@ async function handleQuery(request, env) {
 }
 
 /**
- * POST /api/chat — proxy one turn to agent-bridge on bigiron.
+ * POST /api/chat — proxy one turn to agent-bridge on dgrhub.
  *
  * Deliberately thin: the body passes through as {message, session_id} and the
  * upstream body is returned as the same stream object, so tokens reach the
@@ -1508,7 +1508,7 @@ async function handleChat(request, env) {
     return sseError("BRIDGE UNREACHABLE — " + String(e.message || e));
   }
   if (upstream.status === 409) {
-    return sseError("BUSY — bigiron is already answering a question");
+    return sseError("BUSY — dgrhub is already answering a question");
   }
   if (!upstream.ok || !upstream.body) {
     return sseError(`BRIDGE ERROR ${upstream.status}`);
@@ -2062,13 +2062,13 @@ export default {
     }
 
     // The analyst agent's read-only window onto D1, for the same reason
-    // backfill lives out here: it runs as a script on bigiron and cannot
+    // backfill lives out here: it runs as a script on dgrhub and cannot
     // complete an Access one-time PIN. Bearer-authenticated, and every
     // statement is screened by isSelectOnly() before it reaches the database.
     if (pathname === "/api/query" && request.method === "POST") {
       // Its own secret, not DASHBOARD_SECRET: "may read the database" and "may
       // write rows into it via backfill" are different privileges and should
-      // not be the same string. QUERY_TOKEN lives on bigiron in
+      // not be the same string. QUERY_TOKEN lives on dgrhub in
       // /etc/cha-ching/ccq.json and nowhere else.
       if (!env.QUERY_TOKEN ||
           request.headers.get("Authorization") !== `Bearer ${env.QUERY_TOKEN}`) {
