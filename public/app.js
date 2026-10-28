@@ -536,15 +536,29 @@
     $("#usage-note").textContent =
       `${telemetryTo ? `TELEMETRY TO ${shortDay(telemetryTo)} · ` : ""}APPLE REPORT ${u.watermark ? shortDay(u.watermark) : "—"} · NOT WINDOWED`;
 
-    // Only apps with something to say in the window: telemetry, or at least
-    // one daily row from Apple in the last 30 days (Charlie's call,
-    // 2026-08-25). A product whose last report is months old gets no row —
-    // its stale monthly figure would read as current.
+    // Only apps with something current to say: telemetry, a daily row from
+    // Apple in the last 30 days, or the newest week or month Apple could have
+    // published yet (Charlie's calls, 2026-08-25 and 2026-10-28). The last one
+    // is for apps too small to clear Apple's five-user floor on a single day,
+    // like Bounce. A product whose last report is months old still gets no
+    // row, since its stale monthly figure would read as current. Monthly rows
+    // land on the 5th, so until then the month before last is the newest;
+    // weekly rows land the following Friday, so the latest week's Monday can
+    // be up to 18 days back.
+    const nowMs = Date.now();
+    const lagged = new Date(nowMs - 5 * 86400000);
+    const newestMonth = new Date(Date.UTC(lagged.getUTCFullYear(), lagged.getUTCMonth() - 1, 1))
+      .toISOString().slice(0, 10);
+    const newestWeekFloor = new Date(nowMs - 21 * 86400000).toISOString().slice(0, 10);
     const shown = Object.entries(u.apps).filter(
-      ([, a]) => a.telemetry || (a.trend && a.trend.length)
+      ([, a]) =>
+        a.telemetry ||
+        (a.trend && a.trend.length) ||
+        (a.mau && a.mau.period >= newestMonth) ||
+        (a.wau && a.wau.period >= newestWeekFloor)
     );
     if (!shown.length) {
-      box.innerHTML = `<div class="chat-hello">NO APP WITH USAGE DATA IN THE LAST 30 DAYS</div>`;
+      box.innerHTML = `<div class="chat-hello">NO APP WITH CURRENT USAGE DATA</div>`;
       return;
     }
 
@@ -658,6 +672,8 @@
   // "co.dgrlabs.overflight.pro.yearly.v2" → "PRO · YEARLY". Derived rather
   // than mapped, so a new plan names itself the day it first sells.
   function planLabel(bundleId, productId) {
+    // A paid app's sales rows carry the app's own SKU, which is its bundle id.
+    if (productId === bundleId) return "APP";
     const tail = productId.startsWith(bundleId + ".")
       ? productId.slice(bundleId.length + 1)
       : productId;

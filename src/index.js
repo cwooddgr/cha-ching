@@ -31,6 +31,12 @@ const APP_NAMES = {
   "co.dgrlabs.bounce": "Bounce",
 };
 
+// Apple's sales-report product types for a paid app's own purchase: iPhone,
+// universal, iPad, and Mac. The rest of the non-IAP types are free downloads,
+// re-downloads, and updates. Paid apps send no App Store Server Notifications,
+// so the sales reports are their only revenue record.
+const PAID_APP_TYPES = "('1', '1F', '1T', 'F1')";
+
 const REVENUE_EVENTS = new Set([
   "SUBSCRIBED:INITIAL_BUY",
   "SUBSCRIBED:RESUBSCRIBE",
@@ -795,7 +801,8 @@ async function handleStats(env) {
        FROM sales s
        LEFT JOIN fx_rates fc ON fc.currency = s.customer_currency
        LEFT JOIN fx_rates fp ON fp.currency = s.proceeds_currency
-       WHERE s.product_type LIKE 'IA%' AND s.proceeds_per_unit > 0
+       WHERE (s.product_type LIKE 'IA%' OR s.product_type IN ${PAID_APP_TYPES})
+         AND s.proceeds_per_unit > 0
        GROUP BY s.bundle_id`
     )
   );
@@ -820,7 +827,11 @@ async function handleStats(env) {
          FROM sales s
          LEFT JOIN fx_rates fxc ON fxc.currency = s.customer_currency
          LEFT JOIN fx_rates fxp ON fxp.currency = s.proceeds_currency
-         WHERE s.product_type LIKE 'IA%' AND s.period IS NULL
+         -- A paid app (Bounce) is an unlock too: one purchase, owned for
+         -- good. Its zero-price rows are free downloads of other apps on the
+         -- same product types, so only priced rows count as owners.
+         WHERE (s.product_type LIKE 'IA%' AND s.period IS NULL)
+            OR (s.product_type IN ${PAID_APP_TYPES} AND s.customer_price != 0)
          GROUP BY s.bundle_id, s.sku
 
          UNION ALL
@@ -874,6 +885,20 @@ async function handleStats(env) {
            AND n.offer_type IS NULL
            AND (n.offer_discount_type IS NULL OR n.offer_discount_type != 'FREE_TRIAL')
            AND (n.in_app_ownership_type IS NULL OR n.in_app_ownership_type != 'FAMILY_SHARED')
+       )
+       WHERE rn = 1
+
+       UNION ALL
+
+       -- A paid app sends no notifications, so its sticker price comes from
+       -- the newest USD sale in the reports instead.
+       SELECT sku, CAST(ROUND(customer_price * 1000) AS INTEGER), NULL
+       FROM (
+         SELECT sku, customer_price,
+                ROW_NUMBER() OVER (PARTITION BY sku ORDER BY report_date DESC) AS rn
+         FROM sales
+         WHERE product_type IN ${PAID_APP_TYPES}
+           AND customer_currency = 'USD' AND customer_price > 0
        )
        WHERE rn = 1`
     )

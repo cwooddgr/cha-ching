@@ -114,6 +114,11 @@ explicitly about sandbox.
   launched 2026-07-20. No immediate-buy option, so every organic start is a
   trial.
 - **HeyMuso** (`heymuso`) — unreleased.
+- **Bounce** (`bounce`) — a $2.99 paid app, iOS and Mac, no IAP. It sends no
+  notifications at all (Apple sends none for paid-app purchases), so every
+  Bounce sale comes from `sales`.
+- **On This Day** (`OnThisDay`, capital letters and all) — free, no IAP. It
+  appears only in `sales` downloads and `app_sessions`.
 
 ## Counting rules — the part that is easy to get wrong
 
@@ -240,9 +245,12 @@ the sales table holds the complete history of the business.
 Imported by `scripts/sales-import.mjs`; re-runnable, and each day is replaced
 rather than appended so restatements land cleanly.
 
-- **Money rows are `product_type LIKE 'IA%'`.** Everything else is app
-  downloads, updates and re-downloads: real unit counts, but never revenue.
-  (This is also the only install-volume data we have.)
+- **Money rows are `product_type LIKE 'IA%'`, plus a paid app's own
+  purchases**: types `'1'`, `'1F'`, `'1T'`, and `'F1'` with a non-zero
+  `customer_price` (Bounce: `1F` on iOS, `F1` on Mac). Those same types at zero
+  price are free-app downloads. Everything else is updates and re-downloads:
+  real unit counts, but never revenue. (This is also the only install-volume
+  data we have.) A paid-app purchase counts like an unlock: an owner, no MRR.
 - **`proceeds_per_unit` is PER UNIT.** Multiply by `units`. It is Apple's
   actual post-commission figure — **do not** apply the 85% small-business
   factor to it, that is already done. `customer_price` is the gross the
@@ -336,9 +344,11 @@ dashboard's ACTIVE DEVICES panel shows for them.
 - **Not every app reports.** Bezelbub (macOS) has produced weekly rows only;
   Countdowns and Flip Flap appear sporadically. "As available" is the rule —
   report what exists, name what doesn't. The dashboard panel goes further
-  (Charlie's call, 2026-08-25): an app with no daily row in the last 30 days
-  and no telemetry is left off it entirely, so a months-old monthly figure
-  can't pass for current. The rows stay queryable here.
+  (Charlie's calls, 2026-08-25 and 2026-10-28): an app is left off it unless
+  it has telemetry, a daily row in the last 30 days, or the newest weekly or
+  monthly row Apple could have published yet, so a months-old monthly figure
+  can't pass for current. That last case is how Bounce, too small for daily
+  rows, gets on. The rows stay queryable here.
 
 **Countdowns sends us no notifications, and that is fine** (found 2026-08-10;
 Charlie's call the same day). Its V2 notification URL is almost certainly unset

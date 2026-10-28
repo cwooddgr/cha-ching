@@ -642,3 +642,11 @@ notification type renders exactly as before.
 bigiron is gone. `agent-bridge` and `ccq` now live on dgrhub (I checked: `/usr/local/bin/agent-bridge`, and `ccq` answers there). The current docs and comments, plus the console's BUSY message, now say dgrhub. Older entries above still say bigiron because that is where things ran at the time. The bridge URL (`bridge.dgrlabs.co`) never named the host, so nothing in config changed.
 
 Same day: On This Day (`co.dgrlabs.OnThisDay`) and Bounce (`co.dgrlabs.bounce`) got display names and codes (OTD, BNC). The analytics import pulls every app in App Store Connect, so both were already in `app_sessions`, and On This Day was showing its raw bundle ID on ACTIVE DEVICES. Revenue wiring for them is still shelved (Charlie, 2026-09-15).
+
+## 2026-10-28: Bounce on ACTIVE DEVICES and CUSTOMER BASE
+
+> **Author:** Claude Code (coder) · **Date:** 2026-10-28 · **Status:** decided-by-user (Charlie chose "1a 2a" from the options I offered; this reopens the 2026-09-15 "forget about bounce")
+
+- **ACTIVE DEVICES rule loosened for every app (1a).** An app now shows if it has telemetry, a daily row in the last 30 days, *or* the newest weekly or monthly row Apple could have published yet (month before last until the 5th, then last month; a week whose Monday is within 21 days). Bounce has only a September MONTHLY row (6 devices) because it's under Apple's five-user daily floor, and the old daily-only rule hid it. Stale months still stay off, which was the point of the 2026-08-25 rule.
+- **Bounce revenue from `sales` (2a).** `PAID_APP_TYPES` (`'1','1F','1T','F1'`) joins the `rates` and `unlocks` queries, so Bounce gets a CUSTOMER BASE card as owners (22 through 2026-10-27's report: $69.42 gross, $55.43 net) and its rows count toward the proceeds rate. The list price comes from the newest USD sale. It is still not in the headline revenue figure or the per-app bars, which read only notifications, and Apple sends none for paid apps.
+- **SKU map.** `co.dgrlabs.bounce` and `co.dgrlabs.onthisday` now map to bundle ids. I reran the import with `--force` from 2026-09-09 so the old NULL rows got them; no NULL `bundle_id` remains in `sales`.

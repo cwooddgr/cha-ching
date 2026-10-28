@@ -75,6 +75,8 @@ const SKU_TO_BUNDLE = [
   ["DGR001", "co.dgrlabs.countdowns"],
   ["flipflap-tvos-001", "co.dgrlabs.flipflap"],
   ["bezelbub-macos", "co.dgrlabs.bezelbub"],
+  ["co.dgrlabs.bounce", "co.dgrlabs.bounce"],
+  ["co.dgrlabs.onthisday", "co.dgrlabs.OnThisDay"],
 ].sort((a, b) => b[0].length - a[0].length);
 
 function bundleForSku(sku) {
