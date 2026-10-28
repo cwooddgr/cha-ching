@@ -37,6 +37,11 @@
     "co.dgrlabs.bounce": "Bounce",
   };
 
+  // Apps kept off ACTIVE DEVICES even when Apple has a current figure for
+  // them (Charlie's call, 2026-10-28). Their rows stay in app_sessions for
+  // the analyst.
+  const USAGE_EXCLUDE = new Set(["co.dgrlabs.countdowns", "co.dgrlabs.flipflap"]);
+
   const REVENUE_TYPES = new Set(["DID_RENEW", "ONE_TIME_CHARGE", "SUBSCRIBED", "OFFER_REDEEMED"]);
 
   let stats = null;
@@ -559,7 +564,9 @@
         mau: a.mau && a.mau.period >= newestMonth ? a.mau : null,
         wau: a.wau && a.wau.period >= newestWeekFloor ? a.wau : null,
       }])
-      .filter(([, a]) => a.telemetry || (a.trend && a.trend.length) || a.mau || a.wau);
+      .filter(([id, a]) =>
+        !USAGE_EXCLUDE.has(id) &&
+        (a.telemetry || (a.trend && a.trend.length) || a.mau || a.wau));
     if (!shown.length) {
       box.innerHTML = `<div class="chat-hello">NO APP WITH CURRENT USAGE DATA</div>`;
       return;

@@ -348,7 +348,9 @@ dashboard's ACTIVE DEVICES panel shows for them.
   it has telemetry, a daily row in the last 30 days, or the newest weekly or
   monthly row Apple could have published yet, so a months-old monthly figure
   can't pass for current. That last case is how Bounce, too small for daily
-  rows, gets on. The rows stay queryable here.
+  rows, gets on. Countdowns and Flip Flap are kept off the panel regardless
+  (Charlie's call, 2026-10-28; `USAGE_EXCLUDE` in `public/app.js`). The rows
+  stay queryable here.
 
 **Countdowns sends us no notifications, and that is fine** (found 2026-08-10;
 Charlie's call the same day). Its V2 notification URL is almost certainly unset

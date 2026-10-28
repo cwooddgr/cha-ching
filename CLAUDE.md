@@ -42,7 +42,7 @@ node scripts/analytics-import.mjs   # App Sessions report → app_sessions (laun
 
 ## Settled: don't propose changing (decided-by-user)
 
-Countdowns sends no notifications and that's accepted, not a bug to re-report (2026-08-10); it stays out of the CUSTOMER BASE panel (`CUSTOMER_BASE_EXCLUDE`). An app shows on ACTIVE DEVICES only with telemetry, a daily row in 30 days, or Apple's newest publishable week or month (2026-08-25, widened 2026-10-28). Bounce revenue comes from `sales` only and stays out of the headline figure (2026-10-28). The console runs on Claude Code, not the API (2026-08-09). Rationale is in `docs/analyst.md`, `docs/operations.md`, and `NOTES.md`.
+Countdowns sends no notifications and that's accepted, not a bug to re-report (2026-08-10); it stays out of the CUSTOMER BASE panel (`CUSTOMER_BASE_EXCLUDE`). An app shows on ACTIVE DEVICES only with telemetry, a daily row in 30 days, or Apple's newest publishable week or month (2026-08-25, widened 2026-10-28); Countdowns and Flip Flap stay off it (`USAGE_EXCLUDE`, 2026-10-28). Bounce revenue comes from `sales` only and stays out of the headline figure (2026-10-28). The console runs on Claude Code, not the API (2026-08-09). Rationale is in `docs/analyst.md`, `docs/operations.md`, and `NOTES.md`.
 
 ## Analyst manual
 

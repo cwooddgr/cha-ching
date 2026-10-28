@@ -650,3 +650,9 @@ Same day: On This Day (`co.dgrlabs.OnThisDay`) and Bounce (`co.dgrlabs.bounce`) 
 - **ACTIVE DEVICES rule loosened for every app (1a).** An app now shows if it has telemetry, a daily row in the last 30 days, *or* the newest weekly or monthly row Apple could have published yet (month before last until the 5th, then last month; a week whose Monday is within 21 days). Bounce has only a September MONTHLY row (6 devices) because it's under Apple's five-user daily floor, and the old daily-only rule hid it. Stale months still stay off, which was the point of the 2026-08-25 rule.
 - **Bounce revenue from `sales` (2a).** `PAID_APP_TYPES` (`'1','1F','1T','F1'`) joins the `rates` and `unlocks` queries, so Bounce gets a CUSTOMER BASE card as owners (22 through 2026-10-27's report: $69.42 gross, $55.43 net) and its rows count toward the proceeds rate. The list price comes from the newest USD sale. It is still not in the headline revenue figure or the per-app bars, which read only notifications, and Apple sends none for paid apps.
 - **SKU map.** `co.dgrlabs.bounce` and `co.dgrlabs.onthisday` now map to bundle ids. I reran the import with `--force` from 2026-09-09 so the old NULL rows got them; no NULL `bundle_id` remains in `sales`.
+
+## 2026-10-28: Countdowns and Flip Flap off ACTIVE DEVICES
+
+> **Author:** Claude Code (coder) · **Date:** 2026-10-28 · **Status:** decided-by-user (Charlie: "I'd rather not have Countdowns and Flip Flap on ACTIVE DEVICES")
+
+The widened rule above brought Bezelbub, Countdowns, and Flip Flap onto the panel via their September monthly rows. Charlie kept Bezelbub and dropped the other two. `USAGE_EXCLUDE` in `public/app.js` holds them off the panel; their `app_sessions` rows are untouched.
