@@ -629,6 +629,18 @@ body {
 }
 .foot-drill button:hover { color: var(--cyan); border-color: var(--cyan); }
 #drill-refund:hover { color: var(--red); border-color: var(--red); }
+/* Demo mode on: the button stays lit (and the drill group undimmed) so it's
+   always findable to switch back, without stamping DEMO across the panels a
+   screenshot is meant to show. */
+#drill-demo.active { color: var(--amber); border-color: var(--amber); }
+body.demo .foot-drill { opacity: 1; }
+/* The analyst answers from the real tables, so its log is hidden (not
+   cleared) while demo mode is on. */
+body.demo #chat-log > * { display: none; }
+body.demo #chat-log::before {
+  content: "◈ Demo mode. Analyst console offline: it answers from live data.";
+  display: block; color: var(--ink-3); font-family: var(--mono); font-size: 12px; padding: 4px 2px;
+}
 
 /* staggered boot */
 .col-metrics .panel:nth-child(1) { animation-delay: 0.05s; }

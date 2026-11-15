@@ -44,6 +44,9 @@
 
   const REVENUE_TYPES = new Set(["DID_RENEW", "ONE_TIME_CHARGE", "SUBSCRIBED", "OFFER_REDEEMED"]);
 
+  // `liveStats` is the payload as the Worker sent it; `stats` is what the
+  // panels render, which is the same object unless demo mode is on.
+  let liveStats = null;
   let stats = null;
   let currentWindow = "7d";
   let refreshTimer = null;
@@ -129,7 +132,7 @@
     try {
       const resp = await fetch("/api/stats");
       if (!resp.ok) throw new Error(`stats ${resp.status}`);
-      stats = await resp.json();
+      setStats(await resp.json());
       $("#link-dot").className = "dot dot-live";
       $("#link-state").textContent = "ONLINE";
       render();
@@ -823,6 +826,81 @@
     document.dispatchEvent(new CustomEvent("cc:alert", { detail: { label: "−$9.99 USD" } }));
   });
 
+  // ── demo mode ─────────────────────────────────────────────────────────
+  // For showing the console to someone, or screenshotting it, without giving
+  // away real customer, download, or sales numbers. Every count and money
+  // figure is multiplied by DEMO_FACTOR. Scaling rather than inventing keeps
+  // the screen self-consistent: proceeds still divide into gross at the real
+  // effective rate, conversion still matches its own fraction, and the
+  // charts keep their real shape. What a customer pays for one thing (list
+  // prices, a feed row's amount), rates, period lengths, and dates stay real,
+  // because a $19.99 plan that reads as $223.89 gives the game away.
+  //
+  // The feed keeps its real prices, but its timestamps are pulled toward now
+  // by the same factor, so events land ~11× as often as they really do and
+  // the cadence agrees with the inflated totals.
+  //
+  // Deliberately not persisted: a reload always comes back to real data, so
+  // a forgotten demo can't be mistaken for the business.
+
+  const DEMO_FACTOR = 11.2;
+
+  // Numbers under these keys describe a price, a rate, a span, or a moment,
+  // not a quantity of customers or money, so they pass through unscaled.
+  const DEMO_KEEP = new Set([
+    "generated_at", "oldest", "newest", "proceeds_rate", "rate",
+    "list_usd", "period_days", "trend_days", "settle_days", "t",
+  ]);
+
+  let demo = false;
+
+  function scaleDeep(v, key) {
+    if (typeof v === "number") {
+      if (DEMO_KEEP.has(key)) return v;
+      const s = v * DEMO_FACTOR;
+      // Counts stay whole; money keeps its cents.
+      return Number.isInteger(v) ? Math.round(s) : s;
+    }
+    if (Array.isArray(v)) return v.map((x) => scaleDeep(x, key));
+    if (v && typeof v === "object") {
+      const out = {};
+      for (const [k, x] of Object.entries(v)) out[k] = scaleDeep(x, k);
+      return out;
+    }
+    return v;
+  }
+
+  function fakeStats(s) {
+    const { feed, ...rest } = s;
+    const out = scaleDeep(rest);
+    const now = s.generated_at;
+    out.feed = (feed || []).map((ev) => ({
+      ...ev,
+      signed_date: now - (now - ev.signed_date) / DEMO_FACTOR,
+    }));
+    return out;
+  }
+
+  function setStats(s) {
+    liveStats = s;
+    stats = demo && s ? fakeStats(s) : s;
+  }
+
+  $("#drill-demo").addEventListener("click", () => {
+    demo = !demo;
+    const btn = $("#drill-demo");
+    btn.classList.toggle("active", demo);
+    btn.setAttribute("aria-pressed", String(demo));
+    document.body.classList.toggle("demo", demo);
+    // The analyst answers from the real tables, so it goes dark in demo mode;
+    // its log is hidden too (CSS), not cleared, and comes back on exit.
+    $("#chat-text").disabled = demo;
+    $("#chat-send").disabled = demo || chatBusy;
+    $("#chat-text").placeholder = demo ? "analyst offline in demo mode" : "query the data…";
+    setStats(liveStats);
+    render();
+  });
+
   function describe(ev) {
     const t = ev.notification_type;
     const s = ev.subtype;
@@ -884,7 +962,7 @@
   $("#chat-form").addEventListener("submit", (e) => {
     e.preventDefault();
     const text = $("#chat-text").value.trim();
-    if (!text || chatBusy) return;
+    if (!text || chatBusy || demo) return;
     $("#chat-text").value = "";
     sendChat(text);
   });
@@ -964,8 +1042,9 @@
       bubble.classList.remove("streaming");
       if (!assistantText) bubble.remove();
       chatBusy = false;
-      $("#chat-send").disabled = false;
-      $("#chat-text").focus();
+      // Demo mode may have been switched on while the answer streamed.
+      $("#chat-send").disabled = demo;
+      if (!demo) $("#chat-text").focus();
     }
   }
 
@@ -1047,7 +1126,7 @@
     try {
       const resp = await fetch("/api/stats");
       if (!resp.ok) throw new Error(`stats ${resp.status}`);
-      stats = await resp.json();
+      setStats(await resp.json());
       render();
     } catch (e) {
       // No gate to fall back to any more, so come up anyway with the link

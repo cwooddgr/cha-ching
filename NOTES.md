@@ -1,5 +1,22 @@
 # cha-ching — notes
 
+## Demo mode for screenshots (issue #1)
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-11-15
+> **Status:** decided-by-user (issue #1: a DEMO button beside SALE and REFUND that swaps real data for fake but plausible data, "multiplying the real data by 10x or so (11.2x?)", toggled back by a second tap); the details below are proposed-by-agent
+
+The footer's ◆ DEMO button scales every count and money figure by 11.2,
+entirely in the browser (`fakeStats` in `public/app.js`); the Worker and
+`/api/stats` are untouched. I chose to leave list prices, feed amounts, rates,
+period lengths, and dates real, because a $19.99 plan shown as $223.89 would
+give the game away, and scaling both halves of every ratio keeps the
+effective rate and trial conversion self-consistent. The feed's timestamps
+are pulled toward now by the same factor so its cadence matches the totals.
+The analyst console goes offline in demo mode (log hidden, not cleared),
+since it answers from the real tables. Demo mode is not persisted, so a
+reload always shows real data.
+
 ## Refunds were adding to gross in the sales-backed figures
 
 > **Author:** Claude Code (coder)
