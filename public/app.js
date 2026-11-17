@@ -285,7 +285,13 @@
       .join("");
 
     // per-app breakdown
-    const appEntries = Object.entries(win.apps).sort((a, b) => b[1].revenue_usd - a[1].revenue_usd);
+    // Paid apps with no notifications (Bounce) arrive as sales_apps, from
+    // Apple's sales reports. They share the bars but not the hero total.
+    const appEntries = [
+      ...Object.entries(win.apps),
+      ...Object.entries(win.sales_apps || {}).map(([id, a]) => [id, { ...a, fromSales: true }]),
+    ].sort((a, b) => b[1].revenue_usd - a[1].revenue_usd);
+    const salesThrough = win.sales_through ? win.sales_through.slice(5) : "—";
     const maxRev = Math.max(1e-9, ...appEntries.map(([, a]) => a.revenue_usd));
     $("#apps").innerHTML = appEntries.length
       ? appEntries
@@ -305,6 +311,11 @@
                   <div class="app-bar-amount">${usd(a.revenue_usd)}</div>
                 </div>
                 <div class="app-stats">
+                  ${a.fromSales ? `
+                  <span>sold <b>${num(a.sold)}</b></span>
+                  ${a.refunds ? `<span class="bad">refunds ${num(a.refunds)}</span>` : ""}
+                  ${a.unknown_fx ? `<span class="warn">fx? ${num(a.unknown_fx)}</span>` : ""}
+                  <span class="pending">via sales · thru ${salesThrough} · not in total</span>` : `
                   <span>subs <b>${num(a.new_subs)}</b></span>
                   ${a.offer_codes ? `<span>codes <b>${num(a.offer_codes)}</b></span>` : ""}
                   <span>trials <b>${num(a.trial_conversions)}</b>/<b>${num(a.trials_resolved)}</b>${
@@ -313,7 +324,7 @@
                   <span>renew <b>${num(a.renewals)}</b></span>
                   <span>1x <b>${num(a.one_time)}</b></span>
                   ${a.refunds ? `<span class="bad">refunds ${num(a.refunds)}</span>` : ""}
-                  ${a.unknown_fx ? `<span class="warn">fx? ${num(a.unknown_fx)}</span>` : ""}
+                  ${a.unknown_fx ? `<span class="warn">fx? ${num(a.unknown_fx)}</span>` : ""}`}
                 </div>
               </div>
             </div>`;

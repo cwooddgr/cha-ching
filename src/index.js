@@ -37,6 +37,17 @@ const APP_NAMES = {
 // so the sales reports are their only revenue record.
 const PAID_APP_TYPES = "('1', '1F', '1T', 'F1')";
 
+// Paid apps that exist only in the sales reports. They get a row in the
+// PER-PRODUCT BREAKDOWN from `sales`, but stay out of the windowed totals and
+// the headline revenue figure, which are notifications-only (Charlie's call
+// for Bounce, 2026-10-28).
+const SALES_ONLY_APPS = ["co.dgrlabs.bounce"];
+
+// The Pacific-time calendar day (Apple's sales-report day) holding a moment.
+function ptDate(ms) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Los_Angeles" }).format(new Date(ms));
+}
+
 const REVENUE_EVENTS = new Set([
   "SUBSCRIBED:INITIAL_BUY",
   "SUBSCRIBED:RESUBSCRIBE",
@@ -598,6 +609,31 @@ async function handleStats(env) {
                   in_app_ownership_type`
       ).bind(since)
     );
+
+    // Sales-only apps for the same window. The window starts on the Pacific
+    // day `since` falls in and ends at the sales watermark (yesterday PT), so
+    // the 24h window usually holds at most a day of reports.
+    keys.push(`sales_apps:${key}`);
+    statements.push(
+      env.DB.prepare(
+        `SELECT s.bundle_id,
+                SUM(CASE WHEN s.units > 0 THEN s.units ELSE 0 END) AS sold,
+                SUM(CASE WHEN s.units < 0 THEN -s.units ELSE 0 END) AS refunds,
+                -- ABS: refund rows carry negative units AND negative price.
+                SUM(s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0)) AS gross,
+                SUM(CASE WHEN s.units < 0 THEN -s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0) ELSE 0 END) AS refunds_gross,
+                SUM(s.units * s.proceeds_per_unit * COALESCE(fp.usd_rate, 0)) AS net,
+                SUM(CASE WHEN fc.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
+         FROM sales s
+         LEFT JOIN fx_rates fc ON fc.currency = s.customer_currency
+         LEFT JOIN fx_rates fp ON fp.currency = s.proceeds_currency
+         WHERE s.bundle_id IN (${SALES_ONLY_APPS.map(() => "?").join(", ")})
+           AND s.product_type IN ${PAID_APP_TYPES}
+           AND s.customer_price != 0
+           AND s.report_date >= ?
+         GROUP BY s.bundle_id`
+      ).bind(...SALES_ONLY_APPS, span == null ? "0000-00-00" : ptDate(since))
+    );
     // Trial outcomes, anchored on RESOLUTION (the trial's own end date), not on
     // the start date and not on the arrival of an EXPIRED notification.
     //
@@ -1132,7 +1168,23 @@ async function handleStats(env) {
       }
     }
 
-    windows[key] = { apps, total };
+    // Sales-only apps sit beside `apps`, not in it, so `total` (and the hero
+    // revenue built from it) stays notifications-only.
+    const salesApps = {};
+    for (const r of byKey[`sales_apps:${key}`] || []) {
+      if (!r.sold && !r.refunds) continue;
+      salesApps[r.bundle_id] = {
+        name: appName(r.bundle_id),
+        revenue_usd: r.gross || 0,
+        proceeds_usd: r.net || 0,
+        sold: r.sold || 0,
+        refunds: r.refunds || 0,
+        refunds_usd: r.refunds_gross || 0,
+        unknown_fx: r.unknown_fx || 0,
+      };
+    }
+
+    windows[key] = { apps, total, sales_apps: salesApps, sales_through: salesWatermark };
   }
 
   // Projection describes the pending pool as it stands, so it is deliberately

@@ -1,5 +1,21 @@
 # cha-ching — notes
 
+## Bounce in the PER-PRODUCT BREAKDOWN
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-11-16
+> **Status:** decided-by-user (Charlie: "add bounce sales to the per-product breakdown section"); the details below are proposed-by-agent
+
+Bounce sends no notifications, so the breakdown (built from `notifications`)
+never showed it. Each window in `/api/stats` now carries `sales_apps`, from
+`sales` for the apps in `SALES_ONLY_APPS` (just Bounce), plus `sales_through`
+(the sales watermark). I chose to keep these beside `apps` rather than inside
+it, so `total` and the hero revenue stay notifications-only per the
+2026-10-28 call. A window starts on the Pacific day its start falls in and
+ends at the watermark, so 24h usually shows no Bounce row. The row shows
+gross (as the other rows do), units sold, refunds, and a dim "via sales ·
+thru MM-DD · not in total" note.
+
 ## Demo mode for screenshots (issue #1)
 
 > **Author:** Claude Code (coder)
