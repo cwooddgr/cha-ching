@@ -37,10 +37,10 @@ const APP_NAMES = {
 // so the sales reports are their only revenue record.
 const PAID_APP_TYPES = "('1', '1F', '1T', 'F1')";
 
-// Paid apps that exist only in the sales reports. They get a row in the
-// PER-PRODUCT BREAKDOWN from `sales`, but stay out of the windowed totals and
-// the headline revenue figure, which are notifications-only (Charlie's call
-// for Bounce, 2026-10-28).
+// Paid apps that exist only in the sales reports. Their windowed figures come
+// from `sales`: a row in the PER-PRODUCT BREAKDOWN, and a share of each
+// window's total and the hero revenue (Charlie, 2026-11-16, reversing the
+// 2026-10-28 call that kept Bounce out of the headline).
 const SALES_ONLY_APPS = ["co.dgrlabs.bounce"];
 
 // The Pacific-time calendar day (Apple's sales-report day) holding a moment.
@@ -293,7 +293,10 @@ async function checkRevenueMilestones(env, notification, transaction) {
 
   const now = Date.now();
   const day = 24 * 60 * 60 * 1000;
-  const [fxRes, sumRes] = await env.DB.batch([
+  // The hero figure includes sales-only apps (Bounce) from `sales`, so the
+  // sums here do too. Those sales arrive by import, never through this path,
+  // so they move the baseline but never ring the bell themselves.
+  const [fxRes, sumRes, salesRes] = await env.DB.batch([
     env.DB.prepare("SELECT usd_rate FROM fx_rates WHERE currency = ?").bind(
       transaction.currency ?? ""
     ),
@@ -315,6 +318,19 @@ async function checkRevenueMilestones(env, notification, transaction) {
               OR (notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
                   AND subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))`
     ).bind(now - day, now - 7 * day, now - 30 * day),
+    env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w24h,
+         SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w7d,
+         SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w30d,
+         SUM(g) AS wall
+       FROM (SELECT report_date, s.units * ABS(s.customer_price) * fc.usd_rate * 1000 AS g
+             FROM sales s JOIN fx_rates fc ON fc.currency = s.customer_currency
+             WHERE s.bundle_id IN (${SALES_ONLY_APPS.map(() => "?").join(", ")})
+               AND s.product_type IN ${PAID_APP_TYPES}
+               AND s.customer_price != 0
+               AND s.units > 0) s`
+    ).bind(ptDate(now - day), ptDate(now - 7 * day), ptDate(now - 30 * day), ...SALES_ONLY_APPS),
   ]);
 
   const usdRate = fxRes.results?.[0]?.usd_rate;
@@ -323,7 +339,11 @@ async function checkRevenueMilestones(env, notification, transaction) {
   if (usdRate == null) return;
   const contributionUsd = (transaction.price * usdRate) / 1000;
 
-  const sums = sumRes.results?.[0] || {};
+  const sums = { ...(sumRes.results?.[0] || {}) };
+  const salesSums = salesRes.results?.[0] || {};
+  for (const col of ["w24h", "w7d", "w30d", "wall"]) {
+    sums[col] = (sums[col] || 0) + (salesSums[col] || 0);
+  }
   const crossings = [];
   for (const [key2, col] of [["24h", "w24h"], ["7d", "w7d"], ["30d", "w30d"], ["all", "wall"]]) {
     const after = (sums[col] || 0) / 1000;
@@ -619,10 +639,13 @@ async function handleStats(env) {
         `SELECT s.bundle_id,
                 SUM(CASE WHEN s.units > 0 THEN s.units ELSE 0 END) AS sold,
                 SUM(CASE WHEN s.units < 0 THEN -s.units ELSE 0 END) AS refunds,
-                -- ABS: refund rows carry negative units AND negative price.
-                SUM(s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0)) AS gross,
+                -- Sales and refunds kept apart, as the notifications side
+                -- counts them: revenue is gross of refunds, which are shown
+                -- on their own. ABS because refund rows carry negative units
+                -- AND negative price.
+                SUM(CASE WHEN s.units > 0 THEN s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0) ELSE 0 END) AS gross,
                 SUM(CASE WHEN s.units < 0 THEN -s.units * ABS(s.customer_price) * COALESCE(fc.usd_rate, 0) ELSE 0 END) AS refunds_gross,
-                SUM(s.units * s.proceeds_per_unit * COALESCE(fp.usd_rate, 0)) AS net,
+                SUM(CASE WHEN s.units > 0 THEN s.units * s.proceeds_per_unit * COALESCE(fp.usd_rate, 0) ELSE 0 END) AS net,
                 SUM(CASE WHEN fc.usd_rate IS NULL THEN 1 ELSE 0 END) AS unknown_fx
          FROM sales s
          LEFT JOIN fx_rates fc ON fc.currency = s.customer_currency
@@ -1168,8 +1191,9 @@ async function handleStats(env) {
       }
     }
 
-    // Sales-only apps sit beside `apps`, not in it, so `total` (and the hero
-    // revenue built from it) stays notifications-only.
+    // Sales-only apps sit beside `apps` (the dashboard labels their rows as
+    // coming from sales) but count toward `total` like any other app. Their
+    // proceeds are Apple's actual figure, not gross × an estimated rate.
     const salesApps = {};
     for (const r of byKey[`sales_apps:${key}`] || []) {
       if (!r.sold && !r.refunds) continue;
@@ -1182,6 +1206,13 @@ async function handleStats(env) {
         refunds_usd: r.refunds_gross || 0,
         unknown_fx: r.unknown_fx || 0,
       };
+      const a = salesApps[r.bundle_id];
+      total.revenue_usd += a.revenue_usd;
+      total.proceeds_usd += a.proceeds_usd;
+      total.one_time += a.sold;
+      total.refunds += a.refunds;
+      total.refunds_usd += a.refunds_usd;
+      total.unknown_fx += a.unknown_fx;
     }
 
     windows[key] = { apps, total, sales_apps: salesApps, sales_through: salesWatermark };

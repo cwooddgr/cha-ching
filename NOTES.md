@@ -1,5 +1,20 @@
 # cha-ching — notes
 
+## Bounce counts in the totals
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-11-16
+> **Status:** decided-by-user (Charlie: "include in the totals", reversing the 2026-10-28 call); the details below are proposed-by-agent
+
+Each window's `total` now adds Bounce from `sales_apps`: gross to
+`revenue_usd`, Apple's actual net to `proceeds_usd`, units sold to
+`one_time`, and refunds to `refunds`/`refunds_usd`. To match how the
+notifications side counts, I changed Bounce's gross and net to cover sales
+only, with refunds kept separate, where earlier today they were netted. The
+$1,000 milestone check adds Bounce's sales gross to its window sums so it
+tracks the hero figure. Bounce sales arrive by import, so they shift the
+baseline but never ring the bell on their own.
+
 ## Bounce in the PER-PRODUCT BREAKDOWN
 
 > **Author:** Claude Code (coder)

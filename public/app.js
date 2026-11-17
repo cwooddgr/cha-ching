@@ -286,7 +286,7 @@
 
     // per-app breakdown
     // Paid apps with no notifications (Bounce) arrive as sales_apps, from
-    // Apple's sales reports. They share the bars but not the hero total.
+    // Apple's sales reports. The Worker already counts them in win.total.
     const appEntries = [
       ...Object.entries(win.apps),
       ...Object.entries(win.sales_apps || {}).map(([id, a]) => [id, { ...a, fromSales: true }]),
@@ -315,7 +315,7 @@
                   <span>sold <b>${num(a.sold)}</b></span>
                   ${a.refunds ? `<span class="bad">refunds ${num(a.refunds)}</span>` : ""}
                   ${a.unknown_fx ? `<span class="warn">fx? ${num(a.unknown_fx)}</span>` : ""}
-                  <span class="pending">via sales · thru ${salesThrough} · not in total</span>` : `
+                  <span class="pending">via sales · thru ${salesThrough}</span>` : `
                   <span>subs <b>${num(a.new_subs)}</b></span>
                   ${a.offer_codes ? `<span>codes <b>${num(a.offer_codes)}</b></span>` : ""}
                   <span>trials <b>${num(a.trial_conversions)}</b>/<b>${num(a.trials_resolved)}</b>${

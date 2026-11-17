@@ -116,7 +116,9 @@ explicitly about sandbox.
 - **HeyMuso** (`heymuso`) — unreleased.
 - **Bounce** (`bounce`) — a $2.99 paid app, iOS and Mac, no IAP. It sends no
   notifications at all (Apple sends none for paid-app purchases), so every
-  Bounce sale comes from `sales`.
+  Bounce sale comes from `sales`. The dashboard's windowed totals and
+  headline revenue include Bounce's sales (Charlie's call, 2026-11-16), so
+  "total revenue" means notifications plus Bounce from `sales`.
 - **On This Day** (`OnThisDay`, capital letters and all) — free, no IAP. It
   appears only in `sales` downloads and `app_sessions`.
 
