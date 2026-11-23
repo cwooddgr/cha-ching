@@ -100,6 +100,13 @@ async function makeToken() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Node's fetch reports every network error as "fetch failed"; the reason
+// (ECONNRESET, ETIMEDOUT, a TLS error, …) is on e.cause.
+const describe = (e) => {
+  const c = e?.cause;
+  return c ? `${e.message} (${c.code || c.name || ""}${c.message ? `: ${c.message}` : ""})` : String(e?.message || e);
+};
+
 // Apple's blank cells are a single space, not an empty string.
 const clean = (v) => {
   const t = (v ?? "").trim();
@@ -124,7 +131,21 @@ async function fetchDay(token, reportDate) {
   url.searchParams.set("filter[reportDate]", reportDate);
   url.searchParams.set("filter[vendorNumber]", APPLE_VENDOR_NUMBER);
 
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // "fetch failed" (a network-level error, not an HTTP status) took the last two
+  // days of the 2026-10-12 and 2026-11-16 runs, and the log never said why.
+  // Retry once after a pause, and keep the underlying cause in the message.
+  let resp;
+  try {
+    resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (e) {
+    console.log(`  ${reportDate}: ${describe(e)}; retrying in 30s...`);
+    await sleep(30000);
+    try {
+      resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (e2) {
+      throw new Error(describe(e2));
+    }
+  }
 
   // 404 means no report: a day with no sales, or one Apple hasn't published yet.
   if (resp.status === 404) return null;
