@@ -126,7 +126,8 @@ async function fetchDay(token, reportDate) {
 
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
 
-  if (resp.status === 404) return [];
+  // 404 means no report: a day with no sales, or one Apple hasn't published yet.
+  if (resp.status === 404) return null;
   if (resp.status === 429) {
     const retryAfter = Number(resp.headers.get("Retry-After") || 10);
     console.log(`  rate limited; waiting ${retryAfter}s...`);
@@ -237,6 +238,17 @@ async function main() {
     } catch (e) {
       console.error(`  ${day}: ${e.message}`);
       continue;
+    }
+
+    // A missing report for a recent day may just be unpublished; don't record
+    // it as an empty day, so the next run fetches it again.
+    if (rows === null) {
+      const age = (Date.parse(yesterday) - Date.parse(day)) / 86400000;
+      if (age < 3) {
+        console.log(`  ${day}: not published yet; will retry next run`);
+        continue;
+      }
+      rows = [];
     }
 
     for (const r of rows) skus.set(r.sku, (skus.get(r.sku) || 0) + 1);

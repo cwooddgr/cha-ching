@@ -719,3 +719,9 @@ Same day: On This Day (`co.dgrlabs.OnThisDay`) and Bounce (`co.dgrlabs.bounce`) 
 > **Author:** Claude Code (coder) · **Date:** 2026-10-28 · **Status:** decided-by-user (Charlie: "I'd rather not have Countdowns and Flip Flap on ACTIVE DEVICES")
 
 The widened rule above brought Bezelbub, Countdowns, and Flip Flap onto the panel via their September monthly rows. Charlie kept Bezelbub and dropped the other two. `USAGE_EXCLUDE` in `public/app.js` holds them off the panel; their `app_sessions` rows are untouched.
+
+## 2026-11-23: sales import retries unpublished recent days
+
+> **Author:** Claude Code (coder) · **Date:** 2026-11-23 · **Status:** proposed-by-agent (leo directive)
+
+I changed `scripts/sales-import.mjs` so a 404 for a day within 3 days of yesterday is not recorded as an empty day; the next run fetches it again. Older 404s still record as empty. The November 14 and 15 gap itself was a network "fetch failed", not this bug; the November 23 10:00 run filled both, and the log shows data through November 22.
