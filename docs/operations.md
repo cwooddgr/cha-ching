@@ -41,20 +41,37 @@ the ingest path as fragile.
   five App Store apps (created before 2026-08-25) and a new app's needs an
   Admin key once. The Worker's `/api/analytics-import` bootstraps the tables
   on first use because `wrangler d1 execute --remote` 403s from the laptop.
-  Runs **daily** at 10:15 and 18:15 local via
-  `scripts/co.dgrlabs.cha-ching.analytics-import.plist` (log at
-  `~/Library/Logs/cha-ching-analytics-import.log`); idempotent, so the second
-  run of a day is a no-op once Apple has published.
+  Runs **daily** on dgrhub at 03:15, 10:15, and 18:15 MT (see "Scheduled
+  imports" below); idempotent, so later runs of a day are no-ops once Apple
+  has published.
 - `scripts/sales-import.mjs` — pulls Apple's daily sales reports into `sales`.
   Needs an App Store Connect **Team key** with the Finance role (NOT the
   In-App Purchase key `backfill.mjs` uses — Apple restricts that one to the
   App Store Server API). Both `.p8` files and `.backfill.env` are gitignored.
-  Re-run any time; it skips days already imported. Runs **weekly** (Mondays,
-  10:00 local) via the launchd agent in
-  `scripts/co.dgrlabs.cha-ching.sales-import.plist`
-  (install instructions in the file; log at
-  `~/Library/Logs/cha-ching-sales-import.log`). A run missed while the Mac is
-  asleep costs nothing — the next one backfills it.
+  Re-run any time; it skips days already imported. Runs **weekly** on dgrhub,
+  Mondays at 03:00 MT, an hour before leo's weekly cycle. A missed run costs
+  nothing; the next one backfills it.
+
+### Scheduled imports (on dgrhub since 2026-11-23)
+
+> **Author:** Claude Code (coder) · **Date:** 2026-11-23 · **Status:** decided-by-user (the move and the Monday-before-leo slot: "move the cha-ching import to dgrhub and run it first"; copying the Finance key: "6a"); the 03:15 analytics run and the failure post to #leo are proposed-by-agent
+
+- Units: house's `deploy/dgrhub-jobs/cha-ching-{sales,analytics}-import.{service,timer}`,
+  installed as `co.dgrlabs.house.cha-ching-*-import` LaunchDaemons (run as
+  cwood). Both run `scripts/dgrhub-import.sh sales|analytics`, which pulls this
+  repo, installs `jose` if missing, sources `/etc/cha-ching/import.env`, and runs
+  the importer. Extra args pass through (`dgrhub-import.sh sales --dry-run`).
+- Secrets: `/etc/cha-ching/import.env` and the Finance key
+  `/etc/cha-ching/AuthKey_Y65YDA78X6.p8`, both root:staff 640. The Mac copies
+  in this directory stay for manual runs and `backfill.mjs`.
+- Logs: `journalctl -u cha-ching-sales-import` (or `/var/log/house/cha-ching-sales-import.log`).
+  A non-zero exit posts to #leo via `dgr-notify` and `/etc/leo/slack.env`.
+- Run now: `ssh dgrhub 'sudo systemctl start cha-ching-sales-import'`.
+- Apple's daily sales report is generally out by 8 a.m. PT, so the Monday
+  03:00 MT run holds sales through **Saturday**. Sunday's report lands with the
+  next week's run.
+- The Mac LaunchAgents (`co.dgrlabs.cha-ching.*`, Mondays 10:00 and daily
+  10:15/18:15) were unloaded and their plists deleted the same day.
 - Deploy: `npx wrangler deploy`. Secrets: `SLACK_WEBHOOK_URL`,
   `DASHBOARD_SECRET`, `CHAT_TOKEN`, `QUERY_TOKEN`, `CF_ANALYTICS_TOKEN`.
 - The console's chat proxies to `agent-bridge` on dgrhub; there is no

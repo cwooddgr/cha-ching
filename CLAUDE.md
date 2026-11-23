@@ -19,15 +19,15 @@ Guidance for Claude Code working in this repo, and the operating context for the
 ccq "SELECT …"            # read D1 via the Worker's /api/query: one SELECT or WITH…SELECT, JSON rows, 200-row cap
 ccq --schema             # ccq is on PATH on dgrhub; here: npm run ccq -- "SELECT …" (scripts/ccq.mjs)
 npx wrangler deploy       # deploy the Worker
-node scripts/sales-import.mjs       # Apple daily sales reports → sales (launchd weekly, Mondays 10:00)
-node scripts/analytics-import.mjs   # App Sessions report → app_sessions (launchd daily 10:15 and 18:15)
+node scripts/sales-import.mjs       # Apple daily sales reports → sales (dgrhub weekly, Mondays 03:00 MT)
+node scripts/analytics-import.mjs   # App Sessions report → app_sessions (dgrhub daily 03:15, 10:15, and 18:15 MT)
 ```
 
 ## Architecture in brief
 
 - `src/index.js` is the whole Worker: ingest, Slack, `/api/stats`, the analyst endpoints (`/api/query` behind the SELECT-only guard), and the 01:20 UTC cron that snapshots Overflight telemetry into `active_users`. `public/` is the dashboard, no build step.
 - The console's chat proxies to `agent-bridge` on dgrhub (Claude Code on Charlie's subscription since 2026-08-09).
-- Launchd agents for the imports: `scripts/co.dgrlabs.cha-ching.*.plist`.
+- The imports run on dgrhub through `scripts/dgrhub-import.sh`, scheduled by house units (`docs/operations.md`, "Scheduled imports"). The Mac no longer runs them.
 
 ## Rules that have bitten us
 

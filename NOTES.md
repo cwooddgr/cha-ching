@@ -1,5 +1,20 @@
 # cha-ching — notes
 
+## Imports moved to dgrhub
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-11-23
+> **Status:** decided-by-user (the move, from leo's inbox: "move the cha-ching import to dgrhub and run it first"; the Finance key copy: "6a"); the schedule details are proposed-by-agent
+
+The sales import now runs on dgrhub on Mondays at 03:00 MT, an hour before
+leo's weekly cycle, so leo's report sees last week's sales. I moved the
+analytics import too, since it uses the same key and the Mac may be asleep. It
+keeps its 10:15 and 18:15 runs, and I added 03:15 so Monday's cycle has fresh
+active-device data. A failure posts to #leo. Apple publishes each day's sales
+report around 8 a.m. PT, so the Monday run reaches only Saturday. Details and
+paths are in `docs/operations.md` under "Scheduled imports". I deleted the Mac
+LaunchAgent plists from `scripts/`; git history has them.
+
 ## Bounce counts in the totals
 
 > **Author:** Claude Code (coder)
