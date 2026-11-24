@@ -194,4 +194,6 @@ INSERT OR REPLACE INTO fx_rates (currency, usd_rate) VALUES
   ('VND', 0.000039),
   ('PKR', 0.0036),
   ('RUB', 0.011),
-  ('UAH', 0.024);
+  ('UAH', 0.024),
+  ('KZT', 0.0022),     -- added 2026-11-24 from open.er-api.com (454.80 per USD)
+  ('TZS', 0.000375);   -- added 2026-11-24 from open.er-api.com (2666.58 per USD)

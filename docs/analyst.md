@@ -106,6 +106,27 @@ TABLE active_users (              -- first-party telemetry (Overflight only so f
 **Always filter to `environment = 'Production'`** unless the question is
 explicitly about sandbox.
 
+**Currencies with no exchange rate.** A currency missing from `fx_rates`
+silently drops its rows from every USD figure, so check for gaps in the
+weekly one-on-one. This lists each one with its row count (newest sale date for
+`sales`); it should return no rows:
+
+```sql
+SELECT 'sales' AS source, c AS currency, count(*) AS n, max(report_date) AS newest
+FROM (SELECT customer_currency AS c, report_date FROM sales
+      UNION ALL SELECT proceeds_currency, report_date FROM sales)
+WHERE c IS NOT NULL AND c NOT IN (SELECT currency FROM fx_rates)
+GROUP BY c
+UNION ALL
+SELECT 'notifications', currency, count(*), date(max(signed_date)/1000, 'unixepoch')
+FROM notifications
+WHERE currency IS NOT NULL AND currency NOT IN (SELECT currency FROM fx_rates)
+GROUP BY currency
+```
+
+A new row here means someone needs to add a rate (a write, so a human with
+wrangler; see `NOTES.md` for the 2026-11-24 KZT and TZS example).
+
 ## The apps
 
 - **CD Wally** (`cdwally`) — one-time unlock.

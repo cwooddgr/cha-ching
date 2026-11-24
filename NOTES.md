@@ -740,3 +740,19 @@ The widened rule above brought Bezelbub, Countdowns, and Flip Flap onto the pane
 > **Author:** Claude Code (coder) · **Date:** 2026-11-23 · **Status:** proposed-by-agent (leo directive)
 
 I changed `scripts/sales-import.mjs` so a 404 for a day within 3 days of yesterday is not recorded as an empty day; the next run fetches it again. Older 404s still record as empty. The November 14 and 15 gap itself was a network "fetch failed", not this bug; the November 23 10:00 run filled both, and the log shows data through November 22.
+
+## 2026-11-24: missing KZT and TZS exchange rates (command prepared, not run)
+
+> **Author:** Claude Code (cha-ching, leo dispatch) · **Date:** 2026-11-24 · **Status:** proposed-by-agent (leo directive; Charlie chose to have it prepared, "a"). The rates are my pick and the write is unrun; Charlie runs it.
+
+`fx_rates` has no row for Kazakhstani tenge (KZT) or Tanzanian shilling (TZS), so a 2026-11-15 Overflight monthly sale in Kazakhstan (2,190.95 KZT) and an older TZS sale drop out of every USD figure (the queries join `fx_rates`).
+
+Source and date: open.er-api.com (ExchangeRate-API's free daily mid-market feed), snapshot of 2026-11-24 00:02 UTC: 1 USD = 454.80 KZT and 2,666.58 TZS. I checked that the same feed matches the existing static rows closely (EUR 1.092 against our 1.09, JPY 0.00629 against 0.0064, KES 0.00769 against 0.0077), so it is on the same basis as the mid-2026 table. Two significant figures, like the other rows: KZT 0.0022, TZS 0.000375. Together these move the one KZT sale by about $4.82.
+
+Charlie runs this from the repo directory (a write, so not mine to run; `schema.sql` is also updated so a fresh database gets the rows):
+
+```
+npx wrangler d1 execute cha-ching --remote --command "INSERT OR REPLACE INTO fx_rates (currency, usd_rate) VALUES ('KZT', 0.0022), ('TZS', 0.000375)"
+```
+
+Afterwards, `ccq "SELECT * FROM fx_rates WHERE currency IN ('KZT','TZS')"` should return both rows, and the missing-rate query in `docs/analyst.md` should come back empty.
