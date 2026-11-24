@@ -363,6 +363,13 @@ Countdowns subscription state exists, and it is deliberately excluded from the
 CUSTOMER BASE panel (`CUSTOMER_BASE_EXCLUDE` in `src/index.js`) while staying
 fully queryable in `sales`.
 
+**Dashboard windows** (YTD added 2026-11-24, issue #2): 24H, 7D, and 30D
+slide back from now. YTD opens at midnight Pacific on January 1, so to match
+it use `report_date >= '<year>-01-01'` in `sales` and, in `notifications`,
+`signed_date` at or after that instant (08:00 UTC on January 1; 07:00 UTC in a
+year that starts on daylight time, which none do). ALL is everything. In 2026
+YTD and ALL are the same figure, since the first revenue was 2026-02.
+
 **Time**: use SQLite date functions against ms epochs, e.g.
 `signed_date >= unixepoch('now', '-7 days') * 1000`.
 
