@@ -7,7 +7,7 @@ Apple App Store ──(HTTPS POST, signed JWT)──> Cloudflare Worker ──�
                                                                   └──> Slack #cha-ching (curated)
 
 Dashboard (same worker, https://rev-9000.dgrlabs.co — behind Cloudflare Access):
-  /            FUI dashboard — revenue, subscribers, trials, refunds (24h/7d/30d/all, per app),
+  /            FUI dashboard — revenue, subscribers, trials, refunds (24h/7d/30d/ytd/all, per app),
                active devices (DAU/WAU/MAU + 30-day trend, from Apple's analytics reports)
   /api/stats   aggregates from D1 (revenue, subscribers, MRR, active users)
   /api/chat    proxies one turn to agent-bridge on dgrhub (Claude Code), streamed via SSE
@@ -31,7 +31,7 @@ carry no app-level auth of their own (same arrangement as house.dgrlabs.co).
 | Backfill | `POST /api/backfill` | Bearer-authenticated; accepts `{signedPayloads: [...]}` and stores without Slacking. Fed by `scripts/backfill.mjs`. |
 | Usage snapshot | cron + `POST /api/usage-snapshot` | Daily: rolling DAU/WAU/MAU per app from first-party telemetry (Overflight's Analytics Engine dataset) into `active_users`. The POST runs it by hand (bearer-authenticated). |
 | Analytics import | `POST /api/analytics-import` | Bearer-authenticated; stores one instance of Apple's App Sessions analytics report (active devices). Fed daily by `scripts/analytics-import.mjs`. |
-| Stats | `GET /api/stats` | Aggregates per window (24h/7d/30d/all) and per app: est. revenue (USD), refunds, new subs, trial starts/conversions, renewals, one-time buys, churn signals. |
+| Stats | `GET /api/stats` | Aggregates per window (24h/7d/30d/ytd/all; YTD opens at midnight Pacific on January 1) and per app: est. revenue (USD), refunds, new subs, trial starts/conversions, renewals, one-time buys, churn signals. |
 | Chat | `POST /api/chat` | SSE stream. Proxies to `agent-bridge` on dgrhub, which runs Claude Code on Charlie's **subscription** rather than the Anthropic API. No model call happens in this worker. |
 | Query | `POST /api/query` | Bearer-authenticated, reachable on workers.dev because the agent is a script on dgrhub and cannot clear Access. Single SELECT/WITH statements only — that guard is the only thing between an analytics console and a write handle. |
 | Dashboard | `public/` | No build step. Served only on `rev-9000.dgrlabs.co` behind Cloudflare Access, which is the whole of its auth — no login screen, no cookie. |

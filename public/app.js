@@ -400,16 +400,17 @@
     // meta
     const m = stats.meta;
     $("#meta-events").textContent = `${num(m.total_events)} EVT`;
-    // The horizon reflects what's actually on screen: sliding windows span
-    // (now - span) → now, matching the server's cutoff; only ALL spans the
-    // dataset itself. For 24H a bare date is useless, so include the time.
-    const SPANS = { "24h": 86400000, "7d": 7 * 86400000, "30d": 30 * 86400000 };
-    const span = SPANS[currentWindow];
+    // The horizon reflects what's actually on screen: each window runs from
+    // the instant the server opened it (`win.since`: now - span for the
+    // sliding ones, January 1 Pacific for YTD) to now; only ALL (since 0)
+    // spans the dataset itself. For 24H a bare date is useless, so include
+    // the time.
+    const since = win.since;
     const winLabel = `WINDOW ${currentWindow.toUpperCase()}`;
     $("#horizon").textContent = !m.oldest
       ? "AWAITING DATA"
-      : span
-        ? `HORIZON ${currentWindow === "24h" ? localStamp(stats.generated_at - span) : localDate(stats.generated_at - span)} → NOW · ${winLabel}`
+      : since
+        ? `HORIZON ${currentWindow === "24h" ? localStamp(since) : localDate(since)} → NOW · ${winLabel}`
         : `HORIZON ${localDate(m.oldest)} → ${localDate(m.newest)} · ${winLabel}`;
     $("#foot-updated").textContent = `REFRESHED ${localStamp(stats.generated_at)}`;
   }
@@ -860,7 +861,7 @@
   // not a quantity of customers or money, so they pass through unscaled.
   const DEMO_KEEP = new Set([
     "generated_at", "oldest", "newest", "proceeds_rate", "rate",
-    "list_usd", "period_days", "trend_days", "settle_days", "t",
+    "list_usd", "period_days", "trend_days", "settle_days", "t", "since",
   ]);
 
   let demo = false;

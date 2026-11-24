@@ -1,5 +1,20 @@
 # cha-ching — notes
 
+## YTD window
+
+> **Author:** Claude Code (coder)
+> **Date:** 2026-11-24
+> **Status:** decided-by-user (the tab, issue #2; milestones ring for YTD even while it equals all-time: "don't skip when they match"); the year boundary is proposed-by-agent
+
+The window selector now reads 24H, 7D, 30D, YTD, and ALL. I chose midnight
+Pacific on January 1 as YTD's start, because Apple cuts sales reports on
+Pacific days, so Bounce's sales splice starts on exactly `<year>-01-01`. Charlie
+is on Mountain time, so YTD opens at 01:00 MT; not confirmed. `WINDOWS` now
+maps each key to a function giving the instant the window opens, and each
+window in `/api/stats` carries that instant as `since`, which the horizon line
+reads. The $1,000 milestone check covers YTD too. Until 2027 every YTD
+crossing coincides with an all-time one, and both lines post.
+
 ## Imports moved to dgrhub
 
 > **Author:** Claude Code (coder)

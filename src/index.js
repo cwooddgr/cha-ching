@@ -261,7 +261,7 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
 // ---------------------------------------------------------------------------
 // Revenue milestones — celebrate whole-$1,000 crossings (Charlie's ask,
 // 2026-08-20): whenever a revenue event pushes any dashboard window's gross
-// (24h / 7d / 30d / all-time, the hero figure) past a whole-thousands-of-
+// (24h / 7d / 30d / YTD / all-time, the hero figure) past a whole-thousands-of-
 // dollars line, post a celebration to Slack.
 //
 // Detection is stateless on purpose. At ingest we compute each window's gross
@@ -280,7 +280,9 @@ function buildSlackMessage(notification, transaction, renewalInfo) {
 
 const MILESTONE_STEP_USD = 1000;
 
-const MILESTONE_WINDOW_LABELS = { "24h": "24-hour", "7d": "7-day", "30d": "30-day", all: "All-time" };
+const MILESTONE_WINDOW_LABELS = {
+  "24h": "24-hour", "7d": "7-day", "30d": "30-day", ytd: "Year-to-date", all: "All-time",
+};
 
 async function checkRevenueMilestones(env, notification, transaction) {
   // Same qualification as the dashboard's revenue_usd: revenue event types,
@@ -308,6 +310,7 @@ async function checkRevenueMilestones(env, notification, transaction) {
          SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w24h,
          SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w7d,
          SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS w30d,
+         SUM(CASE WHEN signed_date >= ? THEN price * usd_rate ELSE 0 END) AS wytd,
          SUM(price * usd_rate) AS wall
        FROM notifications JOIN fx_rates USING (currency)
        WHERE environment = 'Production'
@@ -317,12 +320,13 @@ async function checkRevenueMilestones(env, notification, transaction) {
          AND (notification_type IN ('DID_RENEW', 'ONE_TIME_CHARGE')
               OR (notification_type IN ('SUBSCRIBED', 'OFFER_REDEEMED')
                   AND subtype IN ('INITIAL_BUY', 'RESUBSCRIBE')))`
-    ).bind(now - day, now - 7 * day, now - 30 * day),
+    ).bind(now - day, now - 7 * day, now - 30 * day, WINDOWS.ytd(now)),
     env.DB.prepare(
       `SELECT
          SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w24h,
          SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w7d,
          SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS w30d,
+         SUM(CASE WHEN s.report_date >= ? THEN g ELSE 0 END) AS wytd,
          SUM(g) AS wall
        FROM (SELECT report_date, s.units * ABS(s.customer_price) * fc.usd_rate * 1000 AS g
              FROM sales s JOIN fx_rates fc ON fc.currency = s.customer_currency
@@ -330,7 +334,10 @@ async function checkRevenueMilestones(env, notification, transaction) {
                AND s.product_type IN ${PAID_APP_TYPES}
                AND s.customer_price != 0
                AND s.units > 0) s`
-    ).bind(ptDate(now - day), ptDate(now - 7 * day), ptDate(now - 30 * day), ...SALES_ONLY_APPS),
+    ).bind(
+      ptDate(now - day), ptDate(now - 7 * day), ptDate(now - 30 * day), ptDate(WINDOWS.ytd(now)),
+      ...SALES_ONLY_APPS
+    ),
   ]);
 
   const usdRate = fxRes.results?.[0]?.usd_rate;
@@ -341,11 +348,11 @@ async function checkRevenueMilestones(env, notification, transaction) {
 
   const sums = { ...(sumRes.results?.[0] || {}) };
   const salesSums = salesRes.results?.[0] || {};
-  for (const col of ["w24h", "w7d", "w30d", "wall"]) {
+  for (const col of ["w24h", "w7d", "w30d", "wytd", "wall"]) {
     sums[col] = (sums[col] || 0) + (salesSums[col] || 0);
   }
   const crossings = [];
-  for (const [key2, col] of [["24h", "w24h"], ["7d", "w7d"], ["30d", "w30d"], ["all", "wall"]]) {
+  for (const [key2, col] of [["24h", "w24h"], ["7d", "w7d"], ["30d", "w30d"], ["ytd", "wytd"], ["all", "wall"]]) {
     const after = (sums[col] || 0) / 1000;
     const before = after - contributionUsd;
     const line = Math.floor(after / MILESTONE_STEP_USD);
@@ -493,12 +500,27 @@ function json(obj, status = 200) {
 // Stats
 // ---------------------------------------------------------------------------
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Each dashboard window as the instant it opens. The sliding windows run back
+// from now; YTD opens at midnight Pacific on January 1, the same day boundary
+// Apple's sales reports are cut on, so the sales splice for Bounce starts on
+// exactly '<year>-01-01' and nothing from late December leaks in. ALL opens at
+// the epoch. (YTD added for issue #2, 2026-11-24: once a second calendar year
+// starts, YTD and ALL stop being the same figure.)
 const WINDOWS = {
-  "24h": 24 * 60 * 60 * 1000,
-  "7d": 7 * 24 * 60 * 60 * 1000,
-  "30d": 30 * 24 * 60 * 60 * 1000,
-  all: null,
+  "24h": (now) => now - DAY_MS,
+  "7d": (now) => now - 7 * DAY_MS,
+  "30d": (now) => now - 30 * DAY_MS,
+  ytd: (now) => ptYearStartUtcMs(now),
+  all: () => 0,
 };
+
+/** The UTC instant at which the Pacific-Time calendar year containing `ms` began. */
+function ptYearStartUtcMs(ms) {
+  const year = Number(ptDate(ms).slice(0, 4));
+  return ptDayEndUtcMs(`${year - 1}-12-31`);
+}
 
 // Where the trial conversion rate is heading, once every trial running today
 // has resolved.
@@ -613,8 +635,8 @@ async function handleStats(env) {
   const salesWatermark = watermarkRow?.d || null;
   const salesCutoffMs = salesWatermark ? ptDayEndUtcMs(salesWatermark) : 0;
 
-  for (const [key, span] of Object.entries(WINDOWS)) {
-    const since = span == null ? 0 : now - span;
+  for (const [key, opens] of Object.entries(WINDOWS)) {
+    const since = opens(now);
     keys.push(`agg:${key}`);
     statements.push(
       env.DB.prepare(
@@ -655,7 +677,7 @@ async function handleStats(env) {
            AND s.customer_price != 0
            AND s.report_date >= ?
          GROUP BY s.bundle_id`
-      ).bind(...SALES_ONLY_APPS, span == null ? "0000-00-00" : ptDate(since))
+      ).bind(...SALES_ONLY_APPS, since === 0 ? "0000-00-00" : ptDate(since))
     );
     // Trial outcomes, anchored on RESOLUTION (the trial's own end date), not on
     // the start date and not on the arrival of an EXPIRED notification.
@@ -1215,7 +1237,7 @@ async function handleStats(env) {
       total.unknown_fx += a.unknown_fx;
     }
 
-    windows[key] = { apps, total, sales_apps: salesApps, sales_through: salesWatermark };
+    windows[key] = { since: WINDOWS[key](now), apps, total, sales_apps: salesApps, sales_through: salesWatermark };
   }
 
   // Projection describes the pending pool as it stands, so it is deliberately
