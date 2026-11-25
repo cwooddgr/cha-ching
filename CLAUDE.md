@@ -4,7 +4,7 @@ Guidance for Claude Code working in this repo, and the operating context for the
 
 **cha-ching**: a Cloudflare Worker that receives App Store Server Notifications V2 for every DGR Labs app, stores each in D1 (`cha-ching`), posts formatted messages to Slack, and serves the FUI analytics dashboard at rev-9000.dgrlabs.co (cha-ching.dgrlabs.co redirects). Tier 3, but live production telemetry for real revenue: treat the data as authoritative and the ingest path as fragile.
 
-**Status (2026-11-24):** live. Sales and analytics imports run on dgrhub since 2026-11-23 (sales data through 2026-11-22 at last check); the YTD window shipped 2026-11-24; KZT and TZS exchange rates are prepared in `NOTES.md` and waiting for Charlie to run the write.
+**Status (2026-11-25):** live. Sales and analytics imports run on dgrhub since 2026-11-23; every currency in `sales` and `notifications` has an `fx_rates` row (KZT and TZS confirmed 2026-11-25); demo mode now streams invented sales.
 
 ## Docs map
 

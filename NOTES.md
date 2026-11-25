@@ -741,7 +741,7 @@ The widened rule above brought Bezelbub, Countdowns, and Flip Flap onto the pane
 
 I changed `scripts/sales-import.mjs` so a 404 for a day within 3 days of yesterday is not recorded as an empty day; the next run fetches it again. Older 404s still record as empty. The November 14 and 15 gap itself was a network "fetch failed", not this bug; the November 23 10:00 run filled both, and the log shows data through November 22.
 
-## 2026-11-24: missing KZT and TZS exchange rates (command prepared, not run)
+## 2026-11-24: missing KZT and TZS exchange rates (applied; confirmed 2026-11-25)
 
 > **Author:** Claude Code (cha-ching, leo dispatch) · **Date:** 2026-11-24 · **Status:** proposed-by-agent (leo directive; Charlie chose to have it prepared, "a"). The rates are my pick and the write is unrun; Charlie runs it.
 
@@ -756,3 +756,6 @@ npx wrangler d1 execute cha-ching --remote --command "INSERT OR REPLACE INTO fx_
 ```
 
 Afterwards, `ccq "SELECT * FROM fx_rates WHERE currency IN ('KZT','TZS')"` should return both rows, and the missing-rate query in `docs/analyst.md` should come back empty.
+
+2026-11-25: confirmed in production. `fx_rates` holds KZT 0.0022 and TZS 0.000375, and the missing-rate query returns no rows. The write was run sometime after this entry; this session did not run it.
+> **Author:** Claude Code (cha-ching) · **Date:** 2026-11-25 · **Status:** proposed-by-agent (verified via ccq)

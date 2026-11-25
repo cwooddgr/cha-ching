@@ -100,12 +100,28 @@
     if (audioCtx.state === "suspended") audioCtx.resume();
     return audioCtx;
   }
-  ["pointerdown", "keydown"].forEach((t) =>
-    addEventListener(t, () => {
-      if (!soundOn) return;
-      ensureCtx();
-      loadChaChing(); // decode ahead of time so the first hit isn't late
-    }, { once: true, capture: true }));
+  // Only some events count as a user gesture (HTML spec, "activation
+  // triggering input event"): pointerdown only from a MOUSE; a finger counts
+  // at pointerup/touchend. Listening for pointerdown alone, once, meant iOS
+  // never unlocked at all. And iOS can drop a running context back to
+  // "suspended"/"interrupted" (screen lock, a call, another app's audio), so
+  // these stay attached and re-resume on any later tap rather than firing once.
+  function unlockAudio() {
+    if (!soundOn) return;
+    const ctx = ensureCtx();
+    if (!ctx) return;
+    loadChaChing(); // decode ahead of time so the first hit isn't late
+    if (ctx.state !== "running") {
+      // Older WebKit only fully unlocks once something has actually started
+      // inside the gesture, so start a one-sample silent buffer.
+      const src = ctx.createBufferSource();
+      src.buffer = ctx.createBuffer(1, 1, 22050);
+      src.connect(ctx.destination);
+      src.start(0);
+    }
+  }
+  ["pointerdown", "pointerup", "touchend", "keydown", "click"].forEach((t) =>
+    addEventListener(t, unlockAudio, { capture: true, passive: true }));
 
   let chaChingBuf = null;
   let chaChingFetch = null;
