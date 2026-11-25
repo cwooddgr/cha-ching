@@ -882,14 +882,115 @@
     return v;
   }
 
+  // ── demo sales ticker ─────────────────────────────────────────────────
+  // A demo that just sits there doesn't sell the console, so in demo mode
+  // invented sales land every several seconds. Each one goes through the
+  // same path a real one does (a new feed row, the CHA-CHING stamp, the hero
+  // counting up), because it IS a feed row as far as render() knows.
+  //
+  // The catalog is our real USD list prices, weighted by how often each one
+  // actually sells (production notifications through 2026-11-24), so the
+  // mix looks like the business rather than a random number generator.
+  const DEMO_CATALOG = [
+    { w: 106, bundle_id: "co.dgrlabs.overflight", notification_type: "DID_RENEW", subtype: null, product_id: "co.dgrlabs.overflight.pro.yearly.v2", price: 19990, field: "renewals" },
+    { w: 85, bundle_id: "co.dgrlabs.overflight", notification_type: "DID_RENEW", subtype: null, product_id: "co.dgrlabs.overflight.pro.monthly.v2", price: 3990, field: "renewals" },
+    { w: 37, bundle_id: "co.dgrlabs.overflight", notification_type: "ONE_TIME_CHARGE", subtype: null, product_id: "co.dgrlabs.overflight.lifetime.v2", price: 69990, field: "one_time" },
+    { w: 18, bundle_id: "co.dgrlabs.cdwally", notification_type: "ONE_TIME_CHARGE", subtype: null, product_id: "co.dgrlabs.cdwally.wallet48", price: 19990, field: "one_time" },
+    { w: 13, bundle_id: "co.dgrlabs.overflight", notification_type: "SUBSCRIBED", subtype: "INITIAL_BUY", product_id: "co.dgrlabs.overflight.pro.monthly.v2", price: 4990, field: "new_subs" },
+    { w: 6, bundle_id: "co.dgrlabs.overflight", notification_type: "SUBSCRIBED", subtype: "INITIAL_BUY", product_id: "co.dgrlabs.overflight.pro.yearly.v2", price: 9990, field: "new_subs" },
+  ];
+  const DEMO_CATALOG_WEIGHT = DEMO_CATALOG.reduce((n, c) => n + c.w, 0);
+
+  // Exponential gaps (a Poisson process) are what independent buyers really
+  // produce: mostly short waits, the odd quick double, now and then a lull.
+  // Mean 7.5s; clamped so it never stacks two stamps on top of each other or
+  // goes quiet long enough to look broken.
+  const DEMO_SALE_MEAN_MS = 7500;
+  const DEMO_SALE_MIN_MS = 2500;
+  const DEMO_SALE_MAX_MS = 20000;
+
+  let demoSales = []; // invented events since demo mode came on, newest first
+  let demoSaleTimer = null;
+  let demoSaleSeq = 0;
+
+  function pickDemoProduct() {
+    let r = Math.random() * DEMO_CATALOG_WEIGHT;
+    for (const c of DEMO_CATALOG) if ((r -= c.w) < 0) return c;
+    return DEMO_CATALOG[0];
+  }
+
+  function scheduleDemoSale() {
+    clearTimeout(demoSaleTimer);
+    const gap = -Math.log(1 - Math.random()) * DEMO_SALE_MEAN_MS;
+    const ms = Math.min(DEMO_SALE_MAX_MS, Math.max(DEMO_SALE_MIN_MS, gap));
+    demoSaleTimer = setTimeout(demoSale, ms);
+  }
+
+  function demoSale() {
+    if (!demo) return;
+    // A background tab would bank a burst of stamps and sounds for when it
+    // comes back; skip the beat instead.
+    if (!document.hidden && liveStats) {
+      const c = pickDemoProduct();
+      demoSales.unshift({
+        notification_uuid: `demo-${++demoSaleSeq}`,
+        signed_date: Date.now(),
+        notification_type: c.notification_type,
+        subtype: c.subtype,
+        bundle_id: c.bundle_id,
+        environment: "Production",
+        product_id: c.product_id,
+        price: c.price,
+        currency: "USD",
+        storefront: "USA",
+        offer_discount_type: null,
+        demo_field: c.field,
+      });
+      demoSales.length = Math.min(demoSales.length, 40);
+      setStats(liveStats);
+      render();
+    }
+    scheduleDemoSale();
+  }
+
+  function stopDemoSales() {
+    clearTimeout(demoSaleTimer);
+    demoSaleTimer = null;
+    demoSales = [];
+  }
+
+  // Every window ends at now, so an invented sale belongs in all of them.
+  function addDemoSales(out) {
+    const rate = out.meta?.proceeds_rate || 0.82;
+    for (const ev of demoSales) {
+      const usdAmt = ev.price / 1000;
+      for (const win of Object.values(out.windows || {})) {
+        const t = win.total;
+        if (t) {
+          t.revenue_usd = (t.revenue_usd || 0) + usdAmt;
+          t.proceeds_usd = (t.proceeds_usd || 0) + usdAmt * rate;
+          t[ev.demo_field] = (t[ev.demo_field] || 0) + 1;
+        }
+        const a = win.apps?.[ev.bundle_id];
+        if (a) {
+          a.revenue_usd = (a.revenue_usd || 0) + usdAmt;
+          a[ev.demo_field] = (a[ev.demo_field] || 0) + 1;
+        }
+      }
+    }
+  }
+
   function fakeStats(s) {
     const { feed, ...rest } = s;
     const out = scaleDeep(rest);
     const now = s.generated_at;
-    out.feed = (feed || []).map((ev) => ({
+    const scaled = (feed || []).map((ev) => ({
       ...ev,
       signed_date: now - (now - ev.signed_date) / DEMO_FACTOR,
     }));
+    // The Worker sends the newest 40; invented sales push the oldest off.
+    out.feed = [...demoSales, ...scaled].slice(0, 40);
+    addDemoSales(out);
     return out;
   }
 
@@ -909,6 +1010,8 @@
     $("#chat-text").disabled = demo;
     $("#chat-send").disabled = demo || chatBusy;
     $("#chat-text").placeholder = demo ? "analyst offline in demo mode" : "query the data…";
+    if (demo) scheduleDemoSale();
+    else stopDemoSales();
     setStats(liveStats);
     render();
   });
