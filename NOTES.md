@@ -759,3 +759,8 @@ Afterwards, `ccq "SELECT * FROM fx_rates WHERE currency IN ('KZT','TZS')"` shoul
 
 2026-11-25: confirmed in production. `fx_rates` holds KZT 0.0022 and TZS 0.000375, and the missing-rate query returns no rows. The write was run sometime after this entry; this session did not run it.
 > **Author:** Claude Code (cha-ching) · **Date:** 2026-11-25 · **Status:** proposed-by-agent (verified via ccq)
+
+## 2026-11-26: import failures retry before they post
+
+The 10:15 MT analytics run posted a failure to #leo for a one-off DNS error that cleared within minutes. Charlie's rule: "don't report transient errors". `scripts/dgrhub-import.sh` now reruns a failed importer after 2 minutes and again after 10, logs each failed attempt, and posts to #leo only if all three fail. I checked that both importers skip what they already hold unless `--force` is passed, so a rerun is safe. I checked the script with `bash -n` only; the retry loop itself was not run (the unattended guard blocked a stubbed test), so the next scheduled run is its first real test.
+> **Author:** Claude Code (cha-ching) · **Date:** 2026-11-26 · **Status:** decided-by-user (the rule); proposed-by-agent (2 and 10 minute delays)

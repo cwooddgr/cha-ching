@@ -65,7 +65,7 @@ the ingest path as fragile.
   `/etc/cha-ching/AuthKey_Y65YDA78X6.p8`, both root:staff 640. The Mac copies
   in this directory stay for manual runs and `backfill.mjs`.
 - Logs: `journalctl -u cha-ching-sales-import` (or `/var/log/house/cha-ching-sales-import.log`).
-  A non-zero exit posts to #leo via `dgr-notify` and `/etc/leo/slack.env`.
+  A failed run is retried after 2 minutes, then after 10 (rerunning is safe: both importers skip what they hold), and every attempt is logged. Only a run that fails all three attempts posts to #leo via `dgr-notify` and `/etc/leo/slack.env` (2026-11-26, Charlie: "don't report transient errors"; the delays are proposed-by-agent).
 - Run now: `ssh dgrhub 'sudo systemctl start cha-ching-sales-import'`.
 - Apple's daily sales report is generally out by 8 a.m. PT, so the Monday
   03:00 MT run holds sales through **Saturday**. Sunday's report lands with the
